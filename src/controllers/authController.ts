@@ -53,7 +53,6 @@ export const registerUser = async (req: Request, res: Response) => {
 // LOGIN
 export const loginUser = async (req: Request, res: Response) => {
   const { email, password } = req.body;
-
   try {
     const user = await User.findOne({ where: { email } });
     if (!user) {
@@ -63,7 +62,6 @@ export const loginUser = async (req: Request, res: Response) => {
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
-
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
     res.cookie("token", token, {
       httpOnly: true,
@@ -71,9 +69,16 @@ export const loginUser = async (req: Request, res: Response) => {
       sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000,
     });
-    res.json({ token });
+
+    res.json("Logged in");
   } catch (error) {
-    console.error(error);
+    console.error("Login error:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+// LOGIN
+export const logOutUser = async (req: Request, res: Response) => {
+  res.clearCookie("token");
+  res.send("Logged out");
 };

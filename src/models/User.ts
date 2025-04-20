@@ -35,7 +35,7 @@ User.init(
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: "user",
-    },
+    }
   },
   {
     sequelize, // Connection instance
