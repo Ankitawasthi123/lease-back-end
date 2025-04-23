@@ -1,9 +1,21 @@
 // authController.ts
-import { Request, Response } from "express";
+import { Request, response, Response } from "express";
 import sequelize from "../config/data-source";
 import User from "../models/User";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import * as crypto from "crypto";
+import { randomBytes, createHash } from "crypto";
+import nodemailer from "nodemailer";
+import { Pool } from "pg";
+
+const pool = new Pool({
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "your_username",
+  database: process.env.DB_NAME || "your_database",
+  password: process.env.DB_PASSWORD || "your_password",
+  port: 5432,
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || "mysecret";
 
@@ -77,8 +89,98 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 };
 
-// LOGIN
 export const logOutUser = async (req: Request, res: Response) => {
   res.clearCookie("token");
   res.send("Logged out");
 };
+
+export async function sendOtp(req: Request, res: Response) {
+  const otp = randomBytes(3).toString("hex").toUpperCase(); // 6-character OTP
+  const hashedOtp = createHash("sha256").update(otp).digest("hex");
+  const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  // Store the hashed OTP in the database
+  await pool.query(
+    "UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3",
+    [hashedOtp, expiry, req?.body?.email]
+  );
+
+  // Set up your transporter with real SMTP credentials
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "artistatcode@gmail.com",
+      pass: "kubx xjuc minz aayw", // NOT your Gmail password!
+    },
+  });
+
+  await transporter.sendMail({
+    from: "artistatcode@gmail.com",
+    to: req?.body?.email,
+    subject: "Password Reset OTP",
+    text: `Your OTP is: ${otp}`,
+  });
+
+  res.json("OTP send to the mail please check.");
+}
+
+export async function verifyOtp(req: Request, res: Response) {
+  const hashedOtp = crypto
+    .createHash("sha256")
+    .update(req.body.otp)
+    .digest("hex");
+  const result = await pool.query(
+    "SELECT reset_token, reset_token_expiry FROM users WHERE email = $1",
+    [req.body.email]
+  );
+
+  const user = result.rows[0];
+  if (!user) throw new Error("User not found");
+  if (user.reset_token !== hashedOtp) throw new Error("Invalid OTP");
+  if (new Date() > new Date(user.reset_token_expiry))
+    throw new Error("OTP expired");
+
+  res.json("Otp verified successfully.");
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const { newPassword, email }: any = req.body;
+
+  // ✅ Basic input validation
+  if (!newPassword || !email) {
+    return res
+      .status(400)
+      .json({ message: "Email and new password are required." });
+  }
+
+  try {
+    // ✅ Check if OTP was verified earlier (exists in DB)
+    const result = await pool.query(
+      "SELECT reset_token FROM users WHERE email = $1",
+      [email]
+    );
+
+    const user = result.rows[0];
+
+    if (!user || !user.reset_token) {
+      return res
+        .status(400)
+        .json({
+          message: "OTP verification is required before resetting password.",
+        });
+    }
+
+    // ✅ Update password & clear OTP fields
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      "UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE email = $2",
+      [hashedPassword, email]
+    );
+
+    res.json({ message: "Your password has been reset successfully." });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+}
