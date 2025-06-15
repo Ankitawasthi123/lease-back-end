@@ -3,20 +3,24 @@ import { protect } from "../middleware/authMiddleware";
 import pool from "../config/db";
 import jwt from "jsonwebtoken";
 import {
-  companyRequirments,
+  createRequirement,
   updateCompanyRequirements,
   deleteCompanyRequirements,
-  getCurrRequirments,
+  getCurrRequirment,
+  getCompanyRequirementsList,
+  getCompanyList,
 } from "../controllers/companyRequirementsController";
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-router.post("/company/requirements", companyRequirments);
+router.post("/company/createRequirement", createRequirement);
 router.post("/company/updaterequirments", updateCompanyRequirements);
 router.post("/company/deleterequirments", deleteCompanyRequirements);
-router.post("/company/requirement-list", getCurrRequirments);
+router.post("/company/requirement", getCurrRequirment);
+router.post("/company/company-requirements-list", getCompanyRequirementsList);
+router.get("/company/company-list", getCompanyList);
 
 router.get("/user/profile", protect, async (req: Request, res: Response) => {
   try {
