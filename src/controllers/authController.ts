@@ -18,6 +18,8 @@ const pool = new Pool({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "mysecret";
+const JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "your_refresh_jwt_secret";
 
 // Sync the models with the database
 sequelize
@@ -82,11 +84,35 @@ export const loginUser = async (req: Request, res: Response) => {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    res.json("Logged in");
+    const { name, role } = user;
+    return res.json({ name, email: user.email, role });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+export const refreshToken = (req: Request, res: Response) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: "No refresh token provided" });
+  }
+
+  jwt.verify(refreshToken, JWT_REFRESH_SECRET, (err, decoded) => {
+    if (err) {
+      return res
+        .status(403)
+        .json({ message: "Invalid or expired refresh token" });
+    }
+
+    // Generate new access token
+    const accessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
+
+    res.json({ accessToken });
+  });
 };
 
 export const logOutUser = async (req: Request, res: Response) => {
@@ -164,11 +190,9 @@ export async function resetPassword(req: Request, res: Response) {
     const user = result.rows[0];
 
     if (!user || !user.reset_token) {
-      return res
-        .status(400)
-        .json({
-          message: "OTP verification is required before resetting password.",
-        });
+      return res.status(400).json({
+        message: "OTP verification is required before resetting password.",
+      });
     }
 
     // ✅ Update password & clear OTP fields
@@ -184,3 +208,20 @@ export async function resetPassword(req: Request, res: Response) {
     res.status(500).json({ message: "Server error" });
   }
 }
+
+export const getUserProfile = async(req: Request, res: Response) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { id: number };
+    const user = await User.findByPk(payload.id, {
+      attributes: ['name', 'email', 'role']
+    });
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    res.json(user);
+  } catch (err) {
+    res.clearCookie('token');
+    res.status(401).json({ message: 'Unauthorized' });
+  }
+};

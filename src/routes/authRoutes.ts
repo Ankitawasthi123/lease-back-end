@@ -6,6 +6,7 @@ import {
   sendOtp,
   verifyOtp,
   resetPassword,
+  getUserProfile,
 } from "../controllers/authController";
 
 const router = Router();
@@ -16,5 +17,7 @@ router.get("/logout", logOutUser);
 router.post("/sendotp", sendOtp);
 router.post("/verifyotp", verifyOtp);
 router.post("/resetPassword", resetPassword);
+router.get("/user-profile", getUserProfile);
+
 
 export default router;
