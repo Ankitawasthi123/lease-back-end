@@ -9,6 +9,7 @@ import {
   getCurrRequirment,
   getCompanyRequirementsList,
   getCompanyList,
+  getRequirementDetails,
 } from "../controllers/companyRequirementsController";
 
 const router = Router();
@@ -21,5 +22,6 @@ router.post("/company/deleterequirments", deleteCompanyRequirements);
 router.post("/company/requirement", getCurrRequirment);
 router.post("/company/company-requirements-list", getCompanyRequirementsList);
 router.get("/company/company-list", getCompanyList);
+router.post("/company/requirment-details", getRequirementDetails);
 
 export default router;

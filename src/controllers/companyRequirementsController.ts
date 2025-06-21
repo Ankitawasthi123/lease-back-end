@@ -241,3 +241,39 @@ export const getCompanyList = async (req, res, next) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+export const getRequirementDetails = async (req, res) => {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+  }
+
+  const { company_id } = req.body;
+
+  if (!company_id) {
+    return res
+      .status(400)
+      .json({ error: "company_id is required in JSON body" });
+  }
+
+  const parsedId = parseInt(company_id, 10);
+  if (isNaN(parsedId)) {
+    return res.status(400).json({ error: "Invalid company_id format" });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM company_requirements WHERE company_id = $1",
+      [parsedId]
+    );
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No requirements found for this company" });
+    }
+    return res.status(200).json(result.rows);
+  } catch (err) {
+    console.error("Error fetching requirements:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
