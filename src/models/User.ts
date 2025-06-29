@@ -1,5 +1,5 @@
 import { Model, DataTypes } from "sequelize";
-import sequelize  from "../config/data-source";
+import sequelize from "../config/data-source";
 
 class User extends Model {
   public id!: number;
@@ -7,6 +7,12 @@ class User extends Model {
   public email!: string;
   public password!: string;
   public role!: string;
+
+  public company_info!: object;
+  public registered_address!: object;
+  public director_info!: object;
+  public filler_info!: object;
+
   public createdAt!: Date;
   public updatedAt!: Date;
 }
@@ -35,13 +41,31 @@ User.init(
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: "user",
-    }
+    },
+
+    // 👇 Add these new fields
+    company_info: {
+      type: DataTypes.JSONB, // PostgreSQL JSONB type
+      allowNull: true,
+    },
+    registered_address: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    director_info: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    filler_info: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
   },
   {
-    sequelize, // Connection instance
-    tableName: "users", // Table name
-    modelName: "User", // Model name
-    timestamps: false, // Adds `createdAt` and `updatedAt` columns
+    sequelize,
+    tableName: "users",
+    modelName: "User",
+    timestamps: false,
   }
 );
 
