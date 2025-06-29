@@ -8,10 +8,8 @@ interface CompanyRequirement {
     company_name: string;
     company_id: string;
   };
-  // Add other properties as needed
 }
 
-// const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Create a new company entry
 export const createRequirement = async (req, res) => {

@@ -8,6 +8,14 @@ import * as crypto from "crypto";
 import { randomBytes, createHash } from "crypto";
 import nodemailer from "nodemailer";
 import { Pool } from "pg";
+import multer from "multer";
+
+// Multer config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+export const upload = multer({ storage });
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
@@ -64,6 +72,53 @@ export const registerUser = async (req: Request, res: Response) => {
   }
 };
 
+export const completeRegistration = async (req: Request, res: Response) => {
+  const { userId, companyInfo, registeredAddress, directorInfo } = req.body;
+
+  const fillerInfo = JSON.parse(req.body.fillerInfo || "{}");
+
+  const visitingCard = req.files?.["visiting_card_file"]?.[0]?.filename || "";
+  const digitalSignature =
+    req.files?.["digital_signature_file"]?.[0]?.filename || "";
+
+  fillerInfo.visiting_card = visitingCard;
+  fillerInfo.digital_signature = digitalSignature;
+
+
+  try {
+    const query = `
+  UPDATE users
+  SET 
+    company_info = $1,
+    registered_address = $2,
+    director_info = $3,
+    filler_info = $4
+  WHERE id = $5
+  RETURNING *;
+`;
+    const values = [
+      companyInfo,
+      registeredAddress,
+      JSON.parse(directorInfo),
+      fillerInfo,
+      userId,
+    ];
+    const result = await pool.query(query, values);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "User updated successfully",
+      user: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Error completing registration:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 // LOGIN
 export const loginUser = async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -85,7 +140,7 @@ export const loginUser = async (req: Request, res: Response) => {
     });
 
     const { name, role } = user;
-    return res.json({ name, email: user.email, role });
+    return res.json(user);
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Server error" });
@@ -209,19 +264,17 @@ export async function resetPassword(req: Request, res: Response) {
   }
 }
 
-export const getUserProfile = async(req: Request, res: Response) => {
+export const getUserProfile = async (req: Request, res: Response) => {
   const token = req.cookies.token;
-  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
 
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { id: number };
-    const user = await User.findByPk(payload.id, {
-      attributes: ['name', 'email', 'role']
-    });
-    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    const user = await User.findByPk(payload.id);
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
     res.json(user);
   } catch (err) {
-    res.clearCookie('token');
-    res.status(401).json({ message: 'Unauthorized' });
+    res.clearCookie("token");
+    res.status(401).json({ message: "Unauthorized" });
   }
 };
