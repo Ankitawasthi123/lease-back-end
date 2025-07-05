@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-// import { protect } from "../middleware/authMiddleware";
+import { protect } from "../middleware/authMiddleware";
 import pool from "../config/db";
 
 interface CompanyRequirement {

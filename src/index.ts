@@ -1,15 +1,20 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import path from 'path';
 import cookieParser from 'cookie-parser';
 import userRoutes from './routes/userRoutes';
 import authRoutes from './routes/authRoutes';
 import protectedRoutes from './routes/protectedRoutes';
 
+
+
 dotenv.config();
 
 const app = express();
 app.use(cookieParser());
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL || 'http://localhost:3000';
 const corsOptions = {
