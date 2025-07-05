@@ -11,6 +11,7 @@ import {
   getCompanyList,
   getRequirementDetails,
 } from "../controllers/companyRequirementsController";
+import { createBid } from "../controllers/bidsController";
 
 const router = Router();
 
@@ -20,8 +21,9 @@ router.post("/company/createRequirement", protect, createRequirement);
 router.post("/company/updaterequirments", protect, updateCompanyRequirements);
 router.post("/company/deleterequirments", protect, deleteCompanyRequirements);
 router.post("/company/requirement", protect, getCurrRequirment);
-router.post("/company/company-requirements-list", getCompanyRequirementsList);
+router.post("/company/company-requirements-list", protect, getCompanyRequirementsList);
 router.get("/company/company-list", protect, getCompanyList);
 router.post("/company/requirment-details", protect, getRequirementDetails);
+router.post("/bids/add-bid", protect, createBid);
 
 export default router;

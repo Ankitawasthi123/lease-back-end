@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
 import pool from "../config/db";
 
@@ -9,7 +9,6 @@ interface CompanyRequirement {
     company_id: string;
   };
 }
-
 
 // Create a new company entry
 export const createRequirement = async (req, res) => {
@@ -190,18 +189,36 @@ export const getCompanyRequirementsList = async (req, res) => {
       return res.status(400).json({ error: "Invalid Company ID format" });
     }
 
-    const result = await pool.query(
+    const requiremnts = await pool.query(
       "SELECT * FROM company_requirements WHERE company_id = $1",
       [companyIdParsed]
     );
 
-    if (result.rows.length === 0) {
+    if (requiremnts.rows.length === 0) {
       return res
         .status(404)
         .json({ message: "No requirements found for this company" });
     }
 
-    res.status(200).json(result.rows);
+    // Fetch all bids related to these requirements
+    const requirementIds = requiremnts?.rows?.map((req) => req.id).map(String);
+    const bidsResult = await pool.query(
+      "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
+      [requirementIds]
+    );
+
+    const bids = bidsResult.rows;
+
+    // Map bids to each requirement
+    const enrichedRequirements = requiremnts?.rows?.map((req) => {
+      const matchingBids = bids.filter((bid) => bid.requirement_id === req.id);
+      return {
+        ...req,
+        bids: matchingBids,
+      };
+    });
+
+    res.status(200).json(enrichedRequirements);
   } catch (err) {
     console.error("Error fetching company requirements:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -240,38 +257,44 @@ export const getCompanyList = async (req, res, next) => {
   }
 };
 
-export const getRequirementDetails = async (req, res) => {
+export const getRequirementDetails = async (req: Request, res: Response) => {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
 
-  const { company_id } = req.body;
+  const { id, company_id } = req.body;
 
-  if (!company_id) {
-    return res
-      .status(400)
-      .json({ error: "company_id is required in JSON body" });
+  if (!id || !company_id) {
+    return res.status(400).json({
+      error: "Both 'id' and 'company_id' are required in the JSON body",
+    });
   }
 
-  const parsedId = parseInt(company_id, 10);
-  if (isNaN(parsedId)) {
-    return res.status(400).json({ error: "Invalid company_id format" });
+  const parsedId = parseInt(id, 10);
+  const parsedCompanyId = parseInt(company_id, 10);
+
+  if (isNaN(parsedId) || isNaN(parsedCompanyId)) {
+    return res.status(400).json({
+      error: "Invalid format: 'id' and 'company_id' must be numeric",
+    });
   }
 
   try {
     const result = await pool.query(
-      "SELECT * FROM company_requirements WHERE company_id = $1",
-      [parsedId]
+      "SELECT * FROM company_requirements WHERE id = $1 AND company_id = $2",
+      [parsedId, parsedCompanyId]
     );
+
     if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No requirements found for this company" });
+      return res.status(404).json({
+        message: "No requirement found matching the provided id and company_id",
+      });
     }
-    return res.status(200).json(result.rows);
+
+    return res.status(200).json(result.rows[0]); // return single object
   } catch (err) {
-    console.error("Error fetching requirements:", err);
+    console.error("Error fetching requirement:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
