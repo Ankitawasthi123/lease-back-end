@@ -264,37 +264,42 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
   }
 
   const { id, company_id } = req.body;
-
   if (!id || !company_id) {
-    return res.status(400).json({
-      error: "Both 'id' and 'company_id' are required in the JSON body",
-    });
+    return res.status(400).json({ error: "Both 'id' and 'company_id' are required" });
   }
 
-  const parsedId = parseInt(id, 10);
-  const parsedCompanyId = parseInt(company_id, 10);
-
-  if (isNaN(parsedId) || isNaN(parsedCompanyId)) {
-    return res.status(400).json({
-      error: "Invalid format: 'id' and 'company_id' must be numeric",
-    });
+  const requirementId = parseInt(id, 10);
+  const companyId = parseInt(company_id, 10);
+  if (isNaN(requirementId) || isNaN(companyId)) {
+    return res.status(400).json({ error: "'id' and 'company_id' must be numeric" });
   }
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM company_requirements WHERE id = $1 AND company_id = $2",
-      [parsedId, parsedCompanyId]
+    // 1️⃣ Fetch base requirement
+    const reqRes = await pool.query(
+      `SELECT * FROM company_requirements 
+       WHERE id = $1 AND company_id = $2`,
+      [requirementId, companyId]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        message: "No requirement found matching the provided id and company_id",
-      });
+    if (reqRes.rows.length === 0) {
+      return res.status(404).json({ message: "Requirement not found" });
     }
+    const requirement = reqRes.rows[0];
 
-    return res.status(200).json(result.rows[0]); // return single object
+    // 2️⃣ Fetch related bids
+    const bidsRes = await pool.query(
+      `SELECT * FROM bids WHERE requirement_id = $1`,
+      [requirementId]
+    );
+    const bids = bidsRes.rows;
+
+    // 3️⃣ Return enriched object
+    return res.status(200).json({
+      ...requirement,
+      bids,
+    });
   } catch (err) {
-    console.error("Error fetching requirement:", err);
+    console.error("Error fetching requirement details:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 };
