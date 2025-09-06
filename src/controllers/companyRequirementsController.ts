@@ -21,6 +21,8 @@ export const createRequirement = async (req, res) => {
     office_expenses,
     company_id,
     transport,
+    requirment_type,
+    bid_details,
   } = req.body;
 
   try {
@@ -33,8 +35,10 @@ export const createRequirement = async (req, res) => {
         material_details,
         labour_details,
         office_expenses,
-        transport
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        transport,
+        requirment_type,
+        bid_details
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *`,
       [
         warehouse_location,
@@ -45,6 +49,8 @@ export const createRequirement = async (req, res) => {
         labour_details,
         office_expenses,
         transport,
+        requirment_type,
+        bid_details,
       ]
     );
 
@@ -265,13 +271,17 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
 
   const { id, company_id } = req.body;
   if (!id || !company_id) {
-    return res.status(400).json({ error: "Both 'id' and 'company_id' are required" });
+    return res
+      .status(400)
+      .json({ error: "Both 'id' and 'company_id' are required" });
   }
 
   const requirementId = parseInt(id, 10);
   const companyId = parseInt(company_id, 10);
   if (isNaN(requirementId) || isNaN(companyId)) {
-    return res.status(400).json({ error: "'id' and 'company_id' must be numeric" });
+    return res
+      .status(400)
+      .json({ error: "'id' and 'company_id' must be numeric" });
   }
 
   try {

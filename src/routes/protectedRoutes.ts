@@ -17,9 +17,9 @@ const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-router.post("/company/createRequirement", protect, createRequirement);
-router.post("/company/updaterequirments", protect, updateCompanyRequirements);
-router.post("/company/deleterequirments", protect, deleteCompanyRequirements);
+router.post("/company/create-requirement", protect, createRequirement);
+router.post("/company/update-requirments", protect, updateCompanyRequirements);
+router.post("/company/delete-requirments", protect, deleteCompanyRequirements);
 router.post("/company/requirement", protect, getCurrRequirment);
 router.post("/company/company-requirements-list", protect, getCompanyRequirementsList);
 router.get("/company/company-list", protect, getCompanyList);
