@@ -258,7 +258,9 @@ export const getUserProfile = async (req: Request, res: Response) => {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { id: number };
 
-    const user = await User.findByPk(payload.id);
+    const user = await User.findByPk(
+      req?.body?.userId ? req?.body?.userId : payload.id
+    );
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
     const { password, ...rest } = user.toJSON(); // remove password

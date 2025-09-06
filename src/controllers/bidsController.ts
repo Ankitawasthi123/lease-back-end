@@ -12,7 +12,7 @@ interface CompanyRequirement {
 
 export const createBid = async (req: Request, res: Response) => {
   try {
-    const { bid_details, bid_type, requirement_id, pl_id } = req.body;
+    const { bid_details, bid_type, requirement_id, pl_details } = req.body;
 
     // Global validations
     if (
@@ -21,7 +21,7 @@ export const createBid = async (req: Request, res: Response) => {
       Object.keys(bid_details).length === 0 ||
       !bid_type ||
       !requirement_id ||
-      !pl_id
+      !pl_details
     ) {
       return res
         .status(400)
@@ -83,7 +83,7 @@ export const createBid = async (req: Request, res: Response) => {
     const insertQuery = `
       INSERT INTO bids (
         requirement_id,
-        pl_id,
+        pl_details,
         bid_type,
         bid_details
       ) VALUES ($1, $2, $3, $4::jsonb)
@@ -92,7 +92,7 @@ export const createBid = async (req: Request, res: Response) => {
 
     const values = [
       requirement_id,
-      pl_id,
+      pl_details,
       bid_type,
       JSON.stringify(bid_details),
     ];

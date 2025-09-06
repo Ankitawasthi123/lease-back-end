@@ -56,7 +56,7 @@ router.get("/logout", logOutUser);
 router.post("/sendotp", sendOtp);
 router.post("/verifyotp", verifyOtp);
 router.post("/resetPassword", resetPassword);
-router.get("/user-profile", getUserProfile);
+router.post("/user-profile", getUserProfile);
 router.post("/complete-profile", cpUpload, completeRegistration);
 
 
