@@ -23,34 +23,37 @@ export const createRequirement = async (req, res) => {
     transport,
     requirment_type,
     bid_details,
+    distance,
   } = req.body;
 
   try {
     const result = await pool.query(
       `INSERT INTO company_requirements (
-        warehouse_location,
-        company_id,
-        warehouse_size,
-        warehouse_compliance,
-        material_details,
-        labour_details,
-        office_expenses,
-        transport,
-        requirment_type,
-        bid_details
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
+    warehouse_location,
+    company_id,
+    warehouse_size,
+    warehouse_compliance,
+    material_details,
+    labour_details,
+    office_expenses,
+    transport,
+    requirment_type,
+    bid_details,
+    distance
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+  RETURNING *`,
       [
         warehouse_location,
         company_id,
         warehouse_size,
-        warehouse_compliance,
-        material_details,
-        labour_details,
-        office_expenses,
-        transport,
+        JSON.stringify(warehouse_compliance || {}), // ✅
+        JSON.stringify(material_details || {}), // ✅
+        JSON.stringify(labour_details || {}), // ✅
+        JSON.stringify(office_expenses || {}), // ✅
+        JSON.stringify(transport || []), // ✅
         requirment_type,
-        bid_details,
+        JSON.stringify(bid_details || {}), // ✅
+        JSON.stringify(distance || []), // ✅
       ]
     );
 
