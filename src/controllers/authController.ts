@@ -39,7 +39,17 @@ sequelize
 
 // REGISTER
 export const registerUser = async (req: Request, res: Response) => {
-  const { name, email, password, role } = req.body;
+  const {
+    role,
+    firstName,
+    middleName,
+    lastName,
+    companyName,
+    designation,
+    email,
+    contactNumber,
+    password,
+  } = req.body;
   const existingUser = await User.findOne({ where: { email } });
 
   if (existingUser) {
@@ -53,10 +63,15 @@ export const registerUser = async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      name,
-      email,
-      password: hashedPassword,
       role,
+      firstName,
+      middleName,
+      lastName,
+      companyName,
+      designation,
+      email,
+      contactNumber,
+      password: hashedPassword,
     });
 
     res.status(201).json({
@@ -281,11 +296,10 @@ export const getUserProfile = async (req: Request, res: Response) => {
   }
 };
 
-// Helper to safely parse JSON fields
 const tryParseJSON = (value: any) => {
   try {
     return typeof value === "string" ? JSON.parse(value) : value;
   } catch (err) {
-    return value; // fallback if not a parsable JSON string
+    return value;
   }
 };
