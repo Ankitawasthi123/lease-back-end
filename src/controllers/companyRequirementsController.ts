@@ -21,7 +21,7 @@ export const createRequirement = async (req, res) => {
     office_expenses,
     company_id,
     transport,
-    requirment_type,
+    requirement_type,
     bid_details,
     distance,
   } = req.body;
@@ -37,7 +37,7 @@ export const createRequirement = async (req, res) => {
     labour_details,
     office_expenses,
     transport,
-    requirment_type,
+    requirement_type,
     bid_details,
     distance
   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -51,7 +51,7 @@ export const createRequirement = async (req, res) => {
         JSON.stringify(labour_details || {}), // ✅
         JSON.stringify(office_expenses || {}), // ✅
         JSON.stringify(transport || []), // ✅
-        requirment_type,
+        requirement_type,
         JSON.stringify(bid_details || {}), // ✅
         JSON.stringify(distance || []), // ✅
       ]
