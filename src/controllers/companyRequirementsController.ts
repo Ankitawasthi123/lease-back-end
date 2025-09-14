@@ -198,21 +198,17 @@ export const getCompanyRequirementsList = async (req, res) => {
       return res.status(400).json({ error: "Invalid Company ID format" });
     }
 
-
     let requirements = null;
     if (role === "threepl") {
       requirements = await pool.query(
         "SELECT * FROM company_requirements" // fixed table name
       );
-    }
-    else {
+    } else {
       requirements = await pool.query(
         "SELECT * FROM company_requirements WHERE company_id = $1",
         [companyIdParsed]
       );
     }
-
-
 
     if (requirements.rows.length === 0) {
       return res
@@ -254,7 +250,6 @@ export const getCompanyRequirementsList = async (req, res) => {
         };
       })
       .filter(Boolean); // ✅ Remove nulls from the final array
-
 
     res.status(200).json(enrichedRequirements);
   } catch (err) {
@@ -301,12 +296,14 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
 
-  const { id, company_id } = req.body;
+  const { id, company_id, role } = req.body;
   if (!id || !company_id) {
     return res
       .status(400)
       .json({ error: "Both 'id' and 'company_id' are required" });
   }
+
+  console.log("=================================================", role);
 
   const requirementId = parseInt(id, 10);
   const companyId = parseInt(company_id, 10);
@@ -318,11 +315,22 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
 
   try {
     // 1️⃣ Fetch base requirement
-    const reqRes = await pool.query(
-      `SELECT * FROM company_requirements 
-       WHERE id = $1 AND company_id = $2`,
-      [requirementId, companyId]
-    );
+    let reqRes;
+
+    if (role === "threepl") {
+      // Just fetch the requirement by ID
+      reqRes = await pool.query(
+        `SELECT * FROM company_requirements WHERE id = $1`,
+        [requirementId]
+      );
+    } else {
+      // For other roles, also check company_id
+      reqRes = await pool.query(
+        `SELECT * FROM company_requirements WHERE id = $1 AND company_id = $2`,
+        [requirementId, companyId]
+      );
+    }
+
     if (reqRes.rows.length === 0) {
       return res.status(404).json({ message: "Requirement not found" });
     }
