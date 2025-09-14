@@ -18,9 +18,9 @@ export const upload = multer({ storage });
 
 const pool = new Pool({
   host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "your_username",
-  database: process.env.DB_NAME || "your_database",
-  password: process.env.DB_PASSWORD || "your_password",
+  user: process.env.DB_USER || "postgres",
+  database: process.env.DB_NAME || "demodb",
+  password: process.env.DB_PASSWORD || "Ankit@123",
   port: 5432,
 });
 

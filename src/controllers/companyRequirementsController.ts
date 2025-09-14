@@ -185,7 +185,7 @@ export const getCurrRequirment = async (req, res) => {
 };
 
 export const getCompanyRequirementsList = async (req, res) => {
-  const { company_id } = req.body;
+  const { company_id, role } = req.body;
 
   if (!company_id) {
     return res.status(400).json({ error: "Company ID is required" });
@@ -198,19 +198,30 @@ export const getCompanyRequirementsList = async (req, res) => {
       return res.status(400).json({ error: "Invalid Company ID format" });
     }
 
-    const requiremnts = await pool.query(
-      "SELECT * FROM company_requirements WHERE company_id = $1",
-      [companyIdParsed]
-    );
 
-    if (requiremnts.rows.length === 0) {
+    let requirements = null;
+    if (role === "threepl") {
+      requirements = await pool.query(
+        "SELECT * FROM company_requirements" // fixed table name
+      );
+    }
+    else {
+      requirements = await pool.query(
+        "SELECT * FROM company_requirements WHERE company_id = $1",
+        [companyIdParsed]
+      );
+    }
+
+
+
+    if (requirements.rows.length === 0) {
       return res
         .status(404)
         .json({ message: "No requirements found for this company" });
     }
 
     // Fetch all bids related to these requirements
-    const requirementIds = requiremnts?.rows?.map((req) => req.id).map(String);
+    const requirementIds = requirements?.rows?.map((req) => req.id).map(String);
     const bidsResult = await pool.query(
       "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
       [requirementIds]
@@ -218,14 +229,32 @@ export const getCompanyRequirementsList = async (req, res) => {
 
     const bids = bidsResult.rows;
 
-    // Map bids to each requirement
-    const enrichedRequirements = requiremnts?.rows?.map((req) => {
-      const matchingBids = bids.filter((bid) => bid.requirement_id === req.id);
-      return {
-        ...req,
-        bids: matchingBids,
-      };
-    });
+    const enrichedRequirements = requirements?.rows
+      ?.map((req) => {
+        let matchingBids;
+
+        if (role === "threepl") {
+          matchingBids = bids.filter(
+            (bid) =>
+              bid.requirement_id === req.id &&
+              bid.pl_details?.id === parseInt(company_id)
+          );
+        } else {
+          matchingBids = bids.filter((bid) => bid.requirement_id === req.id);
+        }
+
+        // 🔍 Only include requirements that have matching bids for "threepl"
+        if (role === "threepl" && matchingBids.length === 0) {
+          return null;
+        }
+
+        return {
+          ...req,
+          bids: matchingBids,
+        };
+      })
+      .filter(Boolean); // ✅ Remove nulls from the final array
+
 
     res.status(200).json(enrichedRequirements);
   } catch (err) {
