@@ -303,8 +303,6 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
       .json({ error: "Both 'id' and 'company_id' are required" });
   }
 
-  console.log("=================================================", role);
-
   const requirementId = parseInt(id, 10);
   const companyId = parseInt(company_id, 10);
   if (isNaN(requirementId) || isNaN(companyId)) {

@@ -7,6 +7,7 @@ class User extends Model {
   public email!: string;
   public password!: string;
   public role!: string;
+  public company_name!: string;
 
   public company_info!: object;
   public registered_address!: object;
@@ -24,23 +25,27 @@ User.init(
       primaryKey: true,
       autoIncrement: true,
     },
-    firstName: {
+    first_name: {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    middleName: {
+    middle_name: {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    lastName: {
+    last_name: {
       type: DataTypes.STRING,
       allowNull: false,
     },
-    contactNumber: {
+    contact_number: {
       type: DataTypes.STRING,
       allowNull: false,
     },
     designation: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    company_name: {
       type: DataTypes.STRING,
       allowNull: false,
     },
@@ -58,10 +63,8 @@ User.init(
       allowNull: false,
       defaultValue: "user",
     },
-
-    // 👇 Add these new fields
     company_info: {
-      type: DataTypes.JSONB, // PostgreSQL JSONB type
+      type: DataTypes.JSONB,
       allowNull: true,
     },
     registered_address: {

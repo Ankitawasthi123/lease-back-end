@@ -41,13 +41,13 @@ sequelize
 export const registerUser = async (req: Request, res: Response) => {
   const {
     role,
-    firstName,
-    middleName,
-    lastName,
-    companyName,
+    first_name,
+    middle_name,
+    last_name,
+    company_name,
     designation,
     email,
-    contactNumber,
+    contact_number,
     password,
   } = req.body;
   const existingUser = await User.findOne({ where: { email } });
@@ -64,13 +64,13 @@ export const registerUser = async (req: Request, res: Response) => {
 
     const user = await User.create({
       role,
-      firstName,
-      middleName,
-      lastName,
-      companyName,
+      first_name,
+      middle_name,
+      last_name,
+      company_name,
       designation,
       email,
-      contactNumber,
+      contact_number,
       password: hashedPassword,
     });
 
