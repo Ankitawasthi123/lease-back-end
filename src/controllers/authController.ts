@@ -84,35 +84,50 @@ export const registerUser = async (req: Request, res: Response) => {
 };
 
 export const completeRegistration = async (req: Request, res: Response) => {
-  const { userId, companyInfo, registeredAddress, directorInfo } = req.body;
-
-  const fillerInfo = JSON.parse(req.body.fillerInfo || "{}");
-
-  const visitingCard = req.files?.["visiting_card_file"]?.[0]?.filename || "";
-  const digitalSignature =
-    req.files?.["digital_signature_file"]?.[0]?.filename || "";
-
-  fillerInfo.visiting_card = visitingCard;
-  fillerInfo.digital_signature = digitalSignature;
-
   try {
+    const { userId } = req.body;
+
+    // Parse JSON fields if they were sent as strings (common with multipart/form-data)
+    const companyInfo = JSON.parse(req.body.companyInfo || "{}");
+    const registeredAddress = JSON.parse(req.body.registeredAddress || "{}");
+    const communicationAddress = JSON.parse(
+      req.body.communicationAddress || "{}"
+    );
+    const directorInfo = JSON.parse(req.body.directorInfo || "[]");
+    const fillerInfo = JSON.parse(req.body.fillerInfo || "{}");
+
+    // Get file names safely
+    const visitingCard = req.files?.["visiting_card_file"]?.[0]?.filename || "";
+    const digitalSignature =
+      req.files?.["digital_signature_file"]?.[0]?.filename || "";
+
+    // Attach file info to filler data
+    fillerInfo.visiting_card = visitingCard;
+    fillerInfo.digital_signature = digitalSignature;
+
+    // Prepare SQL query and values
     const query = `
-  UPDATE users
-  SET 
-    company_info = $1,
-    registered_address = $2,
-    director_info = $3,
-    filler_info = $4
-  WHERE id = $5
-  RETURNING *;
-`;
+      UPDATE users
+      SET 
+        company_info = $1,
+        registered_address = $2,
+        director_info = $3,
+        filler_info = $4,
+        communication_address = $5
+      WHERE id = $6
+      RETURNING *;
+    `;
+
     const values = [
       companyInfo,
       registeredAddress,
-      JSON.parse(directorInfo),
+      directorInfo,
       fillerInfo,
+      communicationAddress,
       userId,
     ];
+
+    // Execute the update
     const result = await pool.query(query, values);
 
     if (result.rowCount === 0) {
@@ -284,6 +299,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
       ...rest,
       company_info: tryParseJSON(user.company_info),
       registered_address: tryParseJSON(user.registered_address),
+      communication_address: tryParseJSON(user.communication_address),
       director_info: tryParseJSON(user.director_info),
       filler_info: tryParseJSON(user.filler_info),
     };

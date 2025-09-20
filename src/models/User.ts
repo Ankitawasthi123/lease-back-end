@@ -11,6 +11,7 @@ class User extends Model {
 
   public company_info!: object;
   public registered_address!: object;
+  public communication_address!: object;
   public director_info!: object;
   public filler_info!: object;
 
@@ -68,6 +69,10 @@ User.init(
       allowNull: true,
     },
     registered_address: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    communication_address: {
       type: DataTypes.JSONB,
       allowNull: true,
     },
