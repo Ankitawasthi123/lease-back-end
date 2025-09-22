@@ -4,7 +4,7 @@ import pool from "../config/db";
 
 interface CompanyRequirement {
   company_id: string;
-  company_details: {
+  bid_details: {
     company_name: string;
     company_id: string;
   };
@@ -272,7 +272,7 @@ export const getCompanyList = async (req, res, next) => {
       result.rows
         .map((row) => ({
           company_id: row?.company_id,
-          company_name: row?.company_details?.company_name,
+          company_name: row?.bid_details?.company_name,
         }))
         .filter(
           (value, index, self) =>
