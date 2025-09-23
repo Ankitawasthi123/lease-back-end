@@ -67,14 +67,17 @@ export const createRequirement = async (req, res) => {
 export const updateCompanyRequirements = async (req, res) => {
   const {
     id,
-    company_id,
     warehouse_location,
     warehouse_size,
     warehouse_compliance,
     material_details,
     labour_details,
     office_expenses,
+    company_id,
     transport,
+    requirement_type,
+    bid_details,
+    distance,
   } = req.body;
 
   if (!id || !company_id) {
@@ -93,17 +96,23 @@ export const updateCompanyRequirements = async (req, res) => {
          material_details = $4,
          labour_details = $5,
          office_expenses = $6,
-         transport = $7
-       WHERE id = $8 AND company_id = $9
+         transport = $7,
+         requirement_type = $8,
+         bid_details = $9,
+         distance = $10
+       WHERE id = $11 AND company_id = $12
        RETURNING *`,
       [
         warehouse_location,
         warehouse_size,
-        warehouse_compliance,
-        material_details,
-        labour_details,
-        office_expenses,
-        transport,
+        JSON.stringify(warehouse_compliance || {}),
+        JSON.stringify(material_details || {}),
+        JSON.stringify(labour_details || {}),
+        JSON.stringify(office_expenses || {}),
+        JSON.stringify(transport || []),
+        requirement_type,
+        JSON.stringify(bid_details || {}),
+        JSON.stringify(distance || []),
         id,
         company_id,
       ]
