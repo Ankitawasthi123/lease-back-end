@@ -85,49 +85,66 @@ export const registerUser = async (req: Request, res: Response) => {
 
 export const completeRegistration = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.body;
+    const {
+      userId,
+      first_name = "",
+      middle_name = "",
+      last_name = "",
+      designation,
+      contact_number,
+    } = req.body;
 
-    // Parse JSON fields if they were sent as strings (common with multipart/form-data)
-    const companyInfo = JSON.parse(req.body.companyInfo || "{}");
-    const registeredAddress = JSON.parse(req.body.registeredAddress || "{}");
-    const communicationAddress = JSON.parse(
-      req.body.communicationAddress || "{}"
+    // Parse JSON fields safely
+    const company_info = JSON.parse(req.body.company_info || "{}");
+    const registered_address = JSON.parse(req.body.registered_address || "{}");
+    const communication_address = JSON.parse(
+      req.body.communication_address || "{}"
     );
-    const directorInfo = JSON.parse(req.body.directorInfo || "[]");
-    const fillerInfo = JSON.parse(req.body.fillerInfo || "{}");
+    const director_info = JSON.parse(req.body.director_info || "[]");
+    const filler_info = JSON.parse(req.body.filler_info || "{}");
 
-    // Get file names safely
-    const visitingCard = req.files?.["visiting_card_file"]?.[0]?.filename || "";
-    const digitalSignature =
+    // Extract uploaded files
+    const visiting_card =
+      req.files?.["visiting_card_file"]?.[0]?.filename || "";
+    const digital_signature =
       req.files?.["digital_signature_file"]?.[0]?.filename || "";
 
-    // Attach file info to filler data
-    fillerInfo.visiting_card = visitingCard;
-    fillerInfo.digital_signature = digitalSignature;
+    // Add file paths to filler info
+    filler_info.visiting_card = visiting_card;
+    filler_info.digital_signature = digital_signature;
 
-    // Prepare SQL query and values
+    // SQL query with placeholders
     const query = `
       UPDATE users
       SET 
-        company_info = $1,
-        registered_address = $2,
-        director_info = $3,
-        filler_info = $4,
-        communication_address = $5
-      WHERE id = $6
+        first_name = $1,
+        middle_name = $2,
+        last_name = $3,
+        designation = $4,
+        contact_number = $5,
+        company_info = $6,
+        registered_address = $7,
+        director_info = $8,
+        filler_info = $9,
+        communication_address = $10
+      WHERE id = $11
       RETURNING *;
     `;
 
     const values = [
-      companyInfo,
-      registeredAddress,
-      directorInfo,
-      fillerInfo,
-      communicationAddress,
+      first_name,
+      middle_name,
+      last_name,
+      designation,
+      contact_number,
+      company_info,
+      registered_address,
+      director_info,
+      filler_info,
+      communication_address,
       userId,
     ];
 
-    // Execute the update
     const result = await pool.query(query, values);
 
     if (result.rowCount === 0) {
