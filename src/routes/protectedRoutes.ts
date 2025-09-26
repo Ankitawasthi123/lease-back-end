@@ -12,6 +12,7 @@ import {
   getRequirementDetails,
 } from "../controllers/companyRequirementsController";
 import { createBid } from "../controllers/bidsController";
+import { createWarehouse } from "../controllers/warehouse";
 
 const router = Router();
 
@@ -25,5 +26,7 @@ router.post("/company/company-requirements-list", protect, getCompanyRequirement
 router.get("/company/company-list", protect, getCompanyList);
 router.post("/company/requirment-details", protect, getRequirementDetails);
 router.post("/bids/add-bid", protect, createBid);
+router.post("/warehouse/create-warehouse", protect, createWarehouse);
+
 
 export default router;
