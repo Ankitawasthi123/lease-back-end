@@ -19,6 +19,7 @@ import {
   getWarehouseById,
   updateWarehouse,
 } from "../controllers/warehouse";
+import {createPitch} from "../controllers/pitches"
 
 const router = Router();
 
@@ -45,5 +46,7 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
+
+router.get("/pitches/create-pitch", protect, createPitch);
 
 export default router;
