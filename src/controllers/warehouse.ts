@@ -76,22 +76,37 @@ export const getWarehousesCurrUser = async (req: Request, res: Response) => {
 
 export const getWarehouseById = async (req: Request, res: Response) => {
   const { login_id, id } = req.params;
+
   try {
-    const result = await pool.query(
-      `SELECT *
-       FROM warehouse
-       WHERE login_id = $1 AND id = $2
-       LIMIT 1`,
-      [login_id, id]
+    // Fetch warehouse
+    const warehouseResult = await pool.query(
+      `SELECT * FROM warehouse WHERE id = $1 LIMIT 1`,
+      [id]
     );
 
-    if (result.rows.length === 0) {
+    if (warehouseResult.rows.length === 0) {
       return res.status(404).json({ error: "Warehouse not found" });
     }
 
-    res.status(200).json(result.rows[0]);
+    const warehouse = warehouseResult.rows[0];
+
+    // Fetch pitches for warehouse
+    const pitchesResult = await pool.query(
+      `SELECT * FROM pitches WHERE warehouse_id = $1`,
+      [id]
+    );
+    // If pitches exist, add them as a new property on warehouse object
+    if (pitchesResult.rows.length > 0) {
+      return res.status(200).json({
+        ...warehouse,
+        pitches: warehouse?.login_id === login_id && pitchesResult.rows,
+      });
+    }
+
+    // If no pitches, return warehouse as is
+    return res.status(200).json(warehouse);
   } catch (err: any) {
-    console.error("Error fetching warehouse by login & id:", err);
+    console.error("Error fetching warehouse and pitches:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -114,7 +129,9 @@ export const updateWarehouse = async (req: Request, res: Response) => {
     );
 
     if (existing.rows.length === 0) {
-      return res.status(404).json({ error: "You are not authorize to edit the warehouse details." });
+      return res.status(404).json({
+        error: "You are not authorize to edit the warehouse details.",
+      });
     }
 
     // Update warehouse
