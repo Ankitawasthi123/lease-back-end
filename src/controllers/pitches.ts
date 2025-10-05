@@ -4,29 +4,43 @@ import pool from "../config/db";
 // Create Pitch
 export const createPitch = async (req: Request, res: Response) => {
   const {
+    warehouse_id,
+    login_id,
     warehouse_location,
     warehouse_size,
     warehouse_compliance,
     material_details,
-    pitch_id,
   } = req.body;
 
   try {
+    // Ensure compliance and material_details are proper objects
+    const safeCompliance =
+      typeof warehouse_compliance === "object" && warehouse_compliance !== null
+        ? warehouse_compliance
+        : {};
+
+    const safeMaterialDetails =
+      typeof material_details === "object" && material_details !== null
+        ? material_details
+        : {};
+
     const result = await pool.query(
       `INSERT INTO pitches (
         warehouse_location,
+        warehouse_id,
         login_id,
         warehouse_size,
         warehouse_compliance,
         material_details
-      ) VALUES ($1, $2, $3, $4, $5)
+      ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
       [
         warehouse_location,
-        pitch_id, // now using pitch_id instead of login_id
+        warehouse_id,
+        login_id,
         warehouse_size,
-        JSON.stringify(warehouse_compliance || {}),
-        JSON.stringify(material_details || {}),
+        JSON.stringify(safeCompliance),
+        JSON.stringify(safeMaterialDetails),
       ]
     );
 
@@ -36,6 +50,7 @@ export const createPitch = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // Get All Pitches (optionally filter by pitch_id)
 export const getAllPitches = async (req: Request, res: Response) => {
@@ -97,9 +112,31 @@ export const getPitchById = async (req: Request, res: Response) => {
   }
 };
 
-// Update Pitch
+export const getPitchByLoginAndWarehouseId = async (req: Request, res: Response) => {
+  const { login_id, warehouse_id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT *
+       FROM pitches
+       WHERE login_id = $1 AND warehouse_id = $2
+       LIMIT 1`,
+      [login_id, warehouse_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Pitch not found" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err: any) {
+    console.error("Error fetching pitch by login_id & warehouse_id:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const updatePitch = async (req: Request, res: Response) => {
-  const { pitch_id, id } = req.body;
+  const { id, login_id } = req.body;
 
   const {
     warehouse_location,
@@ -112,7 +149,7 @@ export const updatePitch = async (req: Request, res: Response) => {
     // Check if pitch exists
     const existing = await pool.query(
       `SELECT * FROM pitches WHERE login_id = $1 AND id = $2`,
-      [pitch_id, id]
+      [login_id, id]
     );
 
     if (existing.rows.length === 0) {
@@ -135,7 +172,7 @@ export const updatePitch = async (req: Request, res: Response) => {
         warehouse_size,
         JSON.stringify(warehouse_compliance || {}),
         JSON.stringify(material_details || {}),
-        pitch_id,
+        login_id,
         id,
       ]
     );
@@ -146,3 +183,4 @@ export const updatePitch = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+

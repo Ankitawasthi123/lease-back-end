@@ -19,7 +19,12 @@ import {
   getWarehouseById,
   updateWarehouse,
 } from "../controllers/warehouse";
-import {createPitch} from "../controllers/pitches"
+import {
+  createPitch,
+  getPitchById,
+  getPitchByLoginAndWarehouseId,
+  updatePitch,
+} from "../controllers/pitches";
 
 const router = Router();
 
@@ -46,7 +51,9 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
+router.post("/pitch/create-pitch", protect, createPitch);
+router.put("/pitch/update-pitch", protect, updatePitch);
+router.get("/pitch/pitch-details/:login_id/:warehouse_id", protect, getPitchByLoginAndWarehouseId);
 
-router.get("/pitches/create-pitch", protect, createPitch);
 
 export default router;
