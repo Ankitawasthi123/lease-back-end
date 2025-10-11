@@ -54,6 +54,7 @@ router.put("/warehouse/update", protect, updateWarehouse);
 router.post("/pitch/create-pitch", protect, createPitch);
 router.put("/pitch/update-pitch", protect, updatePitch);
 router.get("/pitch/pitch-details/:login_id/:warehouse_id", protect, getPitchByLoginAndWarehouseId);
+router.get("/pitch/:pitch_id", protect, getPitchById);
 
 
 export default router;

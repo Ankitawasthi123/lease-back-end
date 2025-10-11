@@ -91,14 +91,14 @@ export const getPitchesForUser = async (req: Request, res: Response) => {
 
 // Get Pitch by ID
 export const getPitchById = async (req: Request, res: Response) => {
-  const { pitch_id, id } = req.params;
+  const { pitch_id } = req.params;
   try {
     const result = await pool.query(
       `SELECT *
        FROM pitches
-       WHERE login_id = $1 AND id = $2
+       WHERE id = $1
        LIMIT 1`,
-      [pitch_id, id]
+      [pitch_id]
     );
 
     if (result.rows.length === 0) {
