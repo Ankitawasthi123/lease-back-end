@@ -25,6 +25,35 @@ import {
   getPitchByLoginAndWarehouseId,
   updatePitch,
 } from "../controllers/pitches";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (file.fieldname === "pdf_file") {
+      cb(null, "uploads/pdf/");
+    } else {
+      cb(null, "uploads/images/");
+    }
+  },
+  filename: (req, file, cb) => {
+    const loginId = req.body.login_id || "login";
+    const warehouseId = req.body.warehouse_id || "warehouse";
+    const pitchId = req.body.id || "pitch";
+    const ext = path.extname(file.originalname);
+    const base = path.basename(file.originalname, ext).replace(/\s+/g, "_");
+
+    const finalName = `${loginId}_${warehouseId}_${pitchId}_${base}${ext}`;
+    cb(null, finalName);
+  },
+});
+export const upload = multer({ storage });
+
+export const cpUpload = upload.fields([
+  { name: "images", maxCount: 7 },
+  { name: "pdf_file", maxCount: 1 },
+]);
 
 const router = Router();
 
@@ -51,10 +80,13 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
-router.post("/pitch/create-pitch", protect, createPitch);
-router.put("/pitch/update-pitch", protect, updatePitch);
-router.get("/pitch/pitch-details/:login_id/:warehouse_id", protect, getPitchByLoginAndWarehouseId);
+router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
+router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
+router.get(
+  "/pitch/pitch-details/:login_id/:warehouse_id",
+  protect,
+  getPitchByLoginAndWarehouseId
+);
 router.get("/pitch/:pitch_id", protect, getPitchById);
-
 
 export default router;
