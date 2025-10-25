@@ -20,6 +20,13 @@ import {
   updateWarehouse,
 } from "../controllers/warehouse";
 import {
+  createRetail,
+  getAllRetails,
+  getRetailsCurrUser,
+  getRetailById,
+  updateRetail,
+} from "../controllers/retail";
+import {
   createPitch,
   getPitchById,
   getPitchByLoginAndWarehouseId,
@@ -28,6 +35,14 @@ import {
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import {
+  createRetailPitch,
+  getAllRetailPitches,
+  getRetailPitchesForUser,
+  getRetailPitchById,
+  getRetailPitchByLoginAndRetailId,
+  updateRetailPitch,
+} from "../controllers/retailPiches";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -80,12 +95,27 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
+router.post("/retail/create-retail", protect, createRetail);
+router.get("/retail/retail-list", protect, getAllRetails);
+router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
+router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
+router.put("/retail/update", protect, updateRetail);
+
 router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
 router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
 router.get(
   "/pitch/pitch-details/:login_id/:warehouse_id",
   protect,
   getPitchByLoginAndWarehouseId
+);
+router.post("/retail-pitch/create-pitch", protect, cpUpload, createRetailPitch);
+router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
+router.post("/retail-pitch/create-pitch", protect, cpUpload, createRetailPitch);
+router.put("/retail-pitch/update-pitch", protect, cpUpload, updateRetailPitch);
+router.get(
+  "/retail-pitch/pitch-details/:login_id/:retail_id",
+  protect,
+  getRetailPitchByLoginAndRetailId
 );
 router.get("/pitch/:pitch_id", protect, getPitchById);
 
