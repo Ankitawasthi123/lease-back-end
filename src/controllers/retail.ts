@@ -9,15 +9,15 @@ export const createRetail = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `INSERT INTO retail (
-        retail_details,
-        retail_type,
-        login_id,
-        retail_compliance
-      ) VALUES ($1, $2, $3, $4)
-      RETURNING *`,
+    retail_details,
+    retail_type,
+    login_id,
+    retail_compliance
+  ) VALUES ($1, $2, $3, $4)
+  RETURNING *`,
       [
         retail_details,
-        retail_type,
+        JSON.stringify(retail_type || []), // ✅ make sure it's JSON text
         login_id,
         JSON.stringify(retail_compliance || {}),
       ]
@@ -69,7 +69,7 @@ export const getRetailsCurrUser = async (req: Request, res: Response) => {
 
 export const getRetailById = async (req: Request, res: Response) => {
   const { login_id, id } = req.params;
-  console.log("==============================================", login_id, id)
+  console.log("==============================================", login_id, id);
   console.log("Params:", req.params);
 
   if (!id) {
@@ -108,12 +108,12 @@ export const getRetailById = async (req: Request, res: Response) => {
 };
 
 // ✅ UPDATE Retail
+// ✅ UPDATE Retail
 export const updateRetail = async (req: Request, res: Response) => {
-  const { login_id, id } = req.body;
-  const { retail_location, retail_size, retail_compliance, material_details } =
-    req.body;
+  const { id, login_id, retail_details, retail_type, retail_compliance } = req.body;
 
   try {
+    // ✅ Check if record exists and belongs to this user
     const existing = await pool.query(
       `SELECT * FROM retail WHERE login_id = $1 AND id = $2`,
       [login_id, id]
@@ -121,29 +121,40 @@ export const updateRetail = async (req: Request, res: Response) => {
 
     if (existing.rows.length === 0) {
       return res.status(404).json({
-        error: "You are not authorized to edit the retail entry.",
+        error: "You are not authorized to edit this retail entry.",
       });
     }
 
+    // ✅ Ensure retail_type is always an array
+    const normalizedRetailType = Array.isArray(retail_type)
+      ? retail_type
+      : retail_type
+      ? [retail_type]
+      : [];
+
+    // ✅ Update record
     const result = await pool.query(
       `UPDATE retail
-       SET retail_location = $1,
-           retail_size = $2,
-           retail_compliance = $3,
-           material_details = $4
-       WHERE login_id = $5 AND id = $6
+       SET retail_details = $1,
+           retail_type = $2,
+           retail_compliance = $3
+       WHERE login_id = $4 AND id = $5
        RETURNING *`,
       [
-        retail_location,
-        retail_size,
-        JSON.stringify(retail_compliance || {}),
-        JSON.stringify(material_details || {}),
+        retail_details || {},                    // leave as object
+        JSON.stringify(normalizedRetailType),   // always JSON text
+        retail_compliance || {},                // leave as object
         login_id,
         id,
       ]
     );
 
-    res.status(200).json(result.rows[0]);
+    const row = result.rows[0];
+    if (!row) {
+      return res.status(500).json({ error: "Failed to update retail entry." });
+    }
+
+    res.status(200).json(row);
   } catch (err: any) {
     console.error("Error updating retail entry:", err);
     res.status(500).json({ error: err.message });
