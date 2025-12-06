@@ -108,8 +108,8 @@ router.get(
   protect,
   getPitchByLoginAndWarehouseId
 );
-router.post("/retail-pitch/create-pitch", protect, cpUpload, createRetailPitch);
-router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
+router.get("/pitch/:pitch_id", protect, getPitchById);
+
 router.post("/retail-pitch/create-pitch", protect, cpUpload, createRetailPitch);
 router.put("/retail-pitch/update-pitch", protect, cpUpload, updateRetailPitch);
 router.get(
@@ -117,6 +117,8 @@ router.get(
   protect,
   getRetailPitchByLoginAndRetailId
 );
-router.get("/pitch/:pitch_id", protect, getPitchById);
+router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
+
+
 
 export default router;

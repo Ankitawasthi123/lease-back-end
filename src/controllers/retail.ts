@@ -69,7 +69,7 @@ export const getRetailsCurrUser = async (req: Request, res: Response) => {
 
 export const getRetailById = async (req: Request, res: Response) => {
   const { login_id, id } = req.params;
-  console.log("==============================================", login_id, id);
+
   console.log("Params:", req.params);
 
   if (!id) {
@@ -89,10 +89,9 @@ export const getRetailById = async (req: Request, res: Response) => {
     const retail = retailResult.rows[0];
 
     const pitchesResult = await pool.query(
-      `SELECT * FROM pitches WHERE id = $1`,
+      `SELECT * FROM retail_pitches WHERE retail_id = $1`,
       [id]
     );
-
     if (pitchesResult.rows.length > 0) {
       return res.status(200).json({
         ...retail,
