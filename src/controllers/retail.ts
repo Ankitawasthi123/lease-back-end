@@ -69,9 +69,6 @@ export const getRetailsCurrUser = async (req: Request, res: Response) => {
 
 export const getRetailById = async (req: Request, res: Response) => {
   const { login_id, id } = req.params;
-
-  console.log("Params:", req.params);
-
   if (!id) {
     return res.status(400).json({ error: "Missing retail ID parameter" });
   }

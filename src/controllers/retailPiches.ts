@@ -3,6 +3,7 @@ import pool from "../config/db";
 
 export const createRetailPitch = async (req: Request, res: Response) => {
   try {
+
     const {
       retail_id,
       login_id,
@@ -12,35 +13,64 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       justification,
     } = req.body;
 
-    console.log("🧾 Received body:", req.body);
-
-    const safeParse = (val: any) => {
+    // -------------------------------
+    // Helper: Safe JSON parse
+    // -------------------------------
+    const safeParse = (value: any) => {
       try {
-        if (!val || val === "undefined" || val === "null") return {};
-        if (typeof val === "object") return val;
-        return JSON.parse(val);
-      } catch {
-        console.warn("⚠️ JSON parse failed for:", val);
+        if (!value || value === "undefined" || value === "null") return {};
+        if (typeof value === "object") return value; // already parsed
+        return JSON.parse(value);
+      } catch (err) {
+        console.warn("⚠️ JSON parse failed for:", value);
         return {};
       }
     };
 
-    const parsedDetails = safeParse(retail_details);
-    const parsedCompliance = safeParse(retail_compliance);
+    // -------------------------------
+    // Parse JSON Fields
+    // -------------------------------
+    const parsedRetailDetails = safeParse(retail_details);
+    const parsedRetailCompliance = safeParse(retail_compliance);
 
-    // Check for duplicate
+    // -------------------------------
+    // Validate Required Fields
+    // -------------------------------
+    if (!retail_id) {
+      return res.status(400).json({ error: "retail_id is required" });
+    }
+
+    if (!login_id) {
+      return res.status(400).json({ error: "login_id is required" });
+    }
+
+    if (!retail_type) {
+      return res.status(400).json({ error: "retail_type is required" });
+    }
+
+    // Convert retail_type to string safely
+    const safeRetailType =
+      typeof retail_type === "object"
+        ? JSON.stringify(retail_type)
+        : retail_type.toString();
+
+    // -------------------------------
+    // Duplicate retail_id Check
+    // -------------------------------
     const existing = await pool.query(
       `SELECT id FROM retail_pitches WHERE retail_id = $1`,
       [retail_id]
     );
 
     if (existing.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ error: "Retail pitch with this retail_id already exists" });
+      return res.status(400).json({
+        error: "Retail pitch with this retail_id already exists",
+      });
     }
 
-    // Handle uploaded files
+    // -------------------------------
+    // Handle File Uploads
+    // -------------------------------
     const imageFiles = (req.files as any)?.images || [];
     const uploadedImages = imageFiles.map((file: Express.Multer.File) => ({
       filename: file.filename,
@@ -49,7 +79,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       url: `/uploads/images/${file.filename}`,
     }));
 
-    const pdfFile = (req.files as any)?.pdf_file?.[0];
+    const pdfFile = (req.files as any)?.pdf_file?.[0] || null;
     const pdfMeta = pdfFile
       ? {
           filename: pdfFile.filename,
@@ -59,13 +89,9 @@ export const createRetailPitch = async (req: Request, res: Response) => {
         }
       : null;
 
-    // Ensure retail_type is string
-    const safeRetailType =
-      typeof retail_type === "object"
-        ? JSON.stringify(retail_type)
-        : retail_type?.toString?.() || "";
-
-    // Insert new pitch
+    // -------------------------------
+    // Save to Database
+    // -------------------------------
     const result = await pool.query(
       `INSERT INTO retail_pitches (
         login_id,
@@ -81,21 +107,21 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       [
         login_id,
         safeRetailType,
-        JSON.stringify(parsedDetails),
-        JSON.stringify(parsedCompliance),
+        JSON.stringify(parsedRetailDetails),
+        JSON.stringify(parsedRetailCompliance),
         justification || "",
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         retail_id,
       ]
     );
-
     return res.status(201).json(result.rows[0]);
   } catch (err: any) {
     console.error("❌ Error creating retail pitch:", err);
     return res.status(500).json({ error: err.message });
   }
 };
+
 
 /**
  * ✅ GET All Retail Pitches (optionally by login_id)
@@ -193,17 +219,17 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     const {
       id,
       login_id,
-      retail_location,
-      retail_size,
+      retail_type,
+      retail_details,
       retail_compliance,
-      material_details,
       justification,
     } = req.body;
 
+    // Parse JSON fields
+    const parsedDetails = JSON.parse(retail_details || "{}");
     const parsedCompliance = JSON.parse(retail_compliance || "{}");
-    const parsedMaterial = JSON.parse(material_details || "{}");
 
-    // Check existing
+    // Fetch existing pitch
     const existing = await pool.query(
       `SELECT * FROM retail_pitches WHERE login_id = $1 AND id = $2`,
       [login_id, id]
@@ -217,56 +243,65 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
 
     const existingPitch = existing.rows[0];
 
-    // Handle image uploads
-    const imageFiles = (req.files as any)?.images || [];
-    const uploadedImages = imageFiles.length
-      ? imageFiles.map((file: Express.Multer.File) => ({
-          filename: file.filename,
-          mimetype: file.mimetype,
-          size: file.size,
-          url: `/uploads/images/${file.filename}`,
-        }))
-      : existingPitch.image_files;
+    /* --------------------------- IMAGES ----------------------------- */
 
-    // Handle PDF uploads
-    const pdfFile = (req.files as any)?.pdf_file?.[0];
-    const pdfMeta = pdfFile
+    const existingImages = existingPitch.image_files || [];
+    const newUploadedImages = (req.files as any)?.images || [];
+
+    const formattedNewImages = newUploadedImages.map(
+      (file: Express.Multer.File) => ({
+        filename: file.filename,
+        mimetype: file.mimetype,
+        size: file.size,
+        url: `/uploads/images/${file.filename}`,
+      })
+    );
+
+    // Keep all old images + add new ones
+    const finalImages = [...existingImages, ...formattedNewImages];
+
+    /* ----------------------------- PDF ------------------------------ */
+
+    const newPdfFile = (req.files as any)?.pdf_file?.[0];
+
+    const finalPdf = newPdfFile
       ? {
-          filename: pdfFile.filename,
-          mimetype: pdfFile.mimetype,
-          size: pdfFile.size,
-          url: `/uploads/pdf/${pdfFile.filename}`,
+          filename: newPdfFile.filename,
+          mimetype: newPdfFile.mimetype,
+          size: newPdfFile.size,
+          url: `/uploads/pdf/${newPdfFile.filename}`,
         }
       : existingPitch.pdf_files;
 
-    // Update retail pitch
-    const result = await pool.query(
+    /* --------------------------- UPDATE ----------------------------- */
+
+    const updated = await pool.query(
       `UPDATE retail_pitches
-       SET retail_location = $1,
-           retail_size = $2,
-           retail_compliance = $3,
-           material_details = $4,
-           justification = $5,
-           image_files = $6,
-           pdf_files = $7
-       WHERE login_id = $8 AND id = $9
+         SET retail_type = $1,
+             retail_details = $2,
+             retail_compliance = $3,
+             justification = $4,
+             image_files = $5,
+             pdf_files = $6
+       WHERE login_id = $7 AND id = $8
        RETURNING *`,
       [
-        retail_location,
-        retail_size,
+        retail_type,
+        JSON.stringify(parsedDetails),
         JSON.stringify(parsedCompliance),
-        JSON.stringify(parsedMaterial),
         justification || null,
-        JSON.stringify(uploadedImages),
-        JSON.stringify(pdfMeta),
+        JSON.stringify(finalImages),
+        JSON.stringify(finalPdf),
         login_id,
         id,
       ]
     );
 
-    res.status(200).json(result.rows[0]);
+    return res.status(200).json(updated.rows[0]);
   } catch (err: any) {
     console.error("Error updating retail pitch:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
+
