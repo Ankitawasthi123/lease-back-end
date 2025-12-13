@@ -27,6 +27,7 @@
     "pg-hstore": "^2.3.4",
     "reflect-metadata": "^0.2.2",
     "sequelize": "^6.37.7",
+    "twilio": "^5.10.7",
     "typeorm": "^0.3.22"
   },
   "scripts": {

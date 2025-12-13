@@ -2,13 +2,13 @@ import { Router } from "express";
 
 import {
   registerUser,
-  loginUser,
-  logOutUser,
-  sendOtp,
+  // loginUser,
+  // logOutUser,
+  // sendOtp,
   verifyOtp,
-  resetPassword,
+  // resetPassword,
   getUserProfile,
-  completeRegistration,
+  // completeRegistration,
 } from "../controllers/authController";
 import multer from 'multer';
 import path from 'path';
@@ -50,13 +50,13 @@ export const cpUpload = upload.fields([
 const router = Router();
 
 router.post("/register", registerUser);
-router.post("/login", loginUser);
-router.get("/logout", logOutUser);
-router.post("/sendotp", sendOtp);
+// router.post("/login", loginUser);
+// router.get("/logout", logOutUser);
+// router.post("/sendotp", sendOtp);
 router.post("/verifyotp", verifyOtp);
-router.post("/resetPassword", resetPassword);
+// router.post("/resetPassword", resetPassword);
 router.post("/user-profile", getUserProfile);
-router.post("/complete-profile", cpUpload, completeRegistration);
+// router.post("/complete-profile", cpUpload, completeRegistration);
 
 
 export default router;
