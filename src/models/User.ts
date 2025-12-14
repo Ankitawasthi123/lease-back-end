@@ -22,7 +22,7 @@ class User extends Model {
   // ✅ OTP fields
   public email_otp!: string | null;
   public mobile_otp!: string | null;
-  public otp_expires_at!: Date | null;
+  public otp_expires_at!: Date| null;
   public mobile_verified!: boolean;
   public email_verified!: boolean;
 

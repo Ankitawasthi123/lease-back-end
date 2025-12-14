@@ -86,12 +86,9 @@ const generateOtp = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-export const getOtpExpiry = (): Date => {
-  const expiry = new Date();
-  expiry.setMinutes(expiry.getMinutes() + 2);
-  return expiry; // full date + time object
+export const getOtpExpiry = (minutesValid = 5): Date => {
+  return new Date(Date.now() + minutesValid * 60 * 1000);
 };
-
 /* -------------------- REGISTER -------------------- */
 export const registerUser = async (req: Request, res: Response) => {
   const {
@@ -179,8 +176,19 @@ export const verifyOtp = async (req: Request, res: Response) => {
     return res.status(400).json({ message: "OTP expired" });
   }
 
-  if (user.email_otp !== email_otp || user.mobile_otp !== mobile_otp) {
-    return res.status(400).json({ message: "Invalid OTP" });
+  // No OTP provided at all
+  if (!email_otp && !mobile_otp) {
+    return res.status(400).json({ message: "OTP is required" });
+  }
+
+  // Validate email OTP if provided
+  if (email_otp && user.email_otp !== email_otp) {
+    return res.status(400).json({ message: "Invalid email OTP" });
+  }
+
+  // Validate mobile OTP if provided
+  if (mobile_otp && user.mobile_otp !== mobile_otp) {
+    return res.status(400).json({ message: "Invalid mobile OTP" });
   }
 
   user.mobile_verified = true;
@@ -272,7 +280,111 @@ export const completeRegistration = async (req: Request, res: Response) => {
   }
 };
 
-//LOGIN
+export const resendOtp = async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    // Ensure user_id is a number
+    const user = await User.findByPk(Number(user_id));
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // If both already verified, do NOT resend
+    if (user.email_verified && user.mobile_verified) {
+      return res.status(400).json({
+        message: "Email and mobile already verified",
+      });
+    }
+
+    // Generate OTP expiry and ensure it's a Date
+    let otpExpiry = getOtpExpiry();
+    if (typeof otpExpiry === "string") {
+      otpExpiry = new Date(otpExpiry);
+    }
+
+    if (!(otpExpiry instanceof Date) || isNaN(otpExpiry.getTime())) {
+      console.error("Invalid OTP expiry returned:", otpExpiry);
+      return res.status(500).json({ message: "Invalid OTP expiry" });
+    }
+
+    const updateData: Partial<typeof user> = {
+      otp_expires_at: otpExpiry,
+    };
+
+    let emailSent = false;
+    let mobileSent = false;
+
+    /* --------------------
+       Email OTP
+    -------------------- */
+    if (!user.email_verified) {
+      const emailOtp = generateOtp();
+      updateData.email_otp = emailOtp;
+
+      try {
+        await sendEmailOtp(user.email, emailOtp);
+        emailSent = true;
+      } catch (err) {
+        console.error("Failed to send email OTP:", err);
+      }
+    }
+
+    /* --------------------
+       Mobile OTP
+    -------------------- */
+    if (!user.mobile_verified) {
+      const mobileOtp = generateOtp();
+      updateData.mobile_otp = mobileOtp;
+
+      try {
+        await sendMobileOtp(user.contact_number, mobileOtp);
+        mobileSent = true;
+      } catch (err) {
+        console.error("Failed to send mobile OTP:", err);
+      }
+    }
+
+    // Save OTPs & expiry in DB
+    try {
+      await user.update(updateData);
+    } catch (err) {
+      console.error("Failed to update user with OTP:", err);
+      return res.status(500).json({ message: "Failed to update OTP" });
+    }
+
+    // Auto-clear OTP after expiry (only if expiry is in the future)
+    const ttl = Math.max(0, otpExpiry.getTime() - Date.now());
+    if (ttl > 0) {
+      setTimeout(async () => {
+        try {
+          await user.update({
+            email_otp: null,
+            mobile_otp: null,
+            otp_expires_at: null,
+          });
+        } catch (err) {
+          console.error("Failed to clear OTP:", err);
+        }
+      }, ttl);
+    }
+
+    return res.status(200).json({
+      message: "OTP resent successfully",
+      email_sent: emailSent,
+      mobile_sent: mobileSent,
+    });
+  } catch (error) {
+    console.error("Resend OTP error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const loginUser = async (req: Request, res: Response) => {
   const { email, password } = req.body;
   try {
@@ -280,19 +392,37 @@ export const loginUser = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
+
+    // Check if email and mobile are verified
+    if (!user.email_verified || !user.mobile_verified) {
+      return res.status(403).json({
+        message:
+          "Account not verified. Please verify your email and mobile first.",
+        userId: user.id, // send userId so front-end can trigger OTP flow
+        emailVerified: user.email_verified,
+        mobileVerified: user.mobile_verified,
+      });
+    }
+
+    // Both verified – issue token
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
-    return res.json(user);
+    return res.json({
+      message: "Login successful",
+      user,
+    });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Server error" });
@@ -326,96 +456,32 @@ export const logOutUser = async (req: Request, res: Response) => {
   res.send("Logged out");
 };
 
-// export async function sendOtp(req: Request, res: Response) {
-//   const otp = randomBytes(3).toString("hex").toUpperCase();
-//   const hashedOtp = createHash("sha256").update(otp).digest("hex");
-//   const expiry = new Date(Date.now() + 10 * 60 * 1000);
-
-//   await pool.query(
-//     "UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE email = $3",
-//     [hashedOtp, expiry, req?.body?.email]
-//   );
-
-//   const transporter = nodemailer.createTransport({
-//     service: "gmail",
-//     auth: {
-//       user: "artistatcode@gmail.com",
-//       pass: "kubx xjuc minz aayw",
-//     },
-//   });
-
-//   await transporter.sendMail({
-//     from: "artistatcode@gmail.com",
-//     to: req?.body?.email,
-//     subject: "Password Reset OTP",
-//     text: `Your OTP is: ${otp}`,
-//   });
-
-//   res.json("OTP send to the mail please check.");
-// }
-
-// export async function verifyOtp(req: Request, res: Response) {
-//   const hashedOtp = crypto
-//     .createHash("sha256")
-//     .update(req.body.otp)
-//     .digest("hex");
-//   const result = await pool.query(
-//     "SELECT reset_token, reset_token_expiry FROM users WHERE email = $1",
-//     [req.body.email]
-//   );
-
-//   const user = result.rows[0];
-//   if (!user) throw new Error("User not found");
-//   if (user.reset_token !== hashedOtp) throw new Error("Invalid OTP");
-//   if (new Date() > new Date(user.reset_token_expiry))
-//     throw new Error("OTP expired");
-
-//   res.json("Otp verified successfully.");
-// }
-
-export async function resetPassword(req: Request, res: Response) {
-  const { newPassword, email }: any = req.body;
-
-  if (!newPassword || !email) {
-    return res
-      .status(400)
-      .json({ message: "Email and new password are required." });
-  }
-
-  try {
-    const result = await pool.query(
-      "SELECT reset_token FROM users WHERE email = $1",
-      [email]
-    );
-
-    const user = result.rows[0];
-
-    if (!user || !user.reset_token) {
-      return res.status(400).json({
-        message: "OTP verification is required before resetting password.",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await pool.query(
-      "UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE email = $2",
-      [hashedPassword, email]
-    );
-
-    res.json({ message: "Your password has been reset successfully." });
-  } catch (error) {
-    console.error("Reset password error:", error);
-    res.status(500).json({ message: "Server error" });
-  }
-}
-
 export const getUserProfile = async (req: Request, res: Response) => {
-  const {userId} = req.body;;
-  if (!userId) return res.status(400).json({ message: "User ID required" });
+  // Try to get userId from JWT cookie first
+  let userId;
+  const token = req.cookies?.token;
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
+      userId = decoded.id;
+    } catch (err) {
+      console.warn("Invalid token:", err);
+    }
+  }
+
+  // Fallback to request body
+  userId = userId || req.body.userId;
+
+  if (!userId) {
+    return res.status(400).json({ message: "User ID required" });
+  }
 
   try {
     const user = await User.findByPk(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     const { password, ...rest } = user.toJSON();
 
@@ -442,3 +508,141 @@ const tryParseJSON = (value: any) => {
     return value;
   }
 };
+
+export const sendOtpEmail = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    // 1️⃣ Validate email
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // 2️⃣ Find user by email
+    const user = await User.findOne({ where: { email } });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 3️⃣ Generate OTP + expiry
+    const otp = generateOtp();
+    const otpExpiry = getOtpExpiry(2); // 2 minutes
+
+    // 4️⃣ Save OTP in DB
+    await user.update({
+      email_otp: otp,
+      otp_expires_at: otpExpiry,
+    });
+
+    // 5️⃣ Send email OTP
+    await sendEmailOtp(email, otp);
+
+    // 6️⃣ Return safe user data
+    const {
+      password,
+      email_otp,
+      mobile_otp,
+      ...safeUser
+    } = user.toJSON();
+
+    return res.status(200).json({
+      message: "OTP sent to email successfully",
+      user: safeUser,
+      otp_expires_at: otpExpiry,
+    });
+  } catch (error) {
+    console.error("sendOtpEmail error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+export const verifyEmailOtp = async (req: Request, res: Response) => {
+  try {
+    const { userId, email_otp, mobile_otp } = req.body;
+
+    // 1️⃣ Validate input
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    if (!email_otp) {
+      return res.status(400).json({ message: "OTP is required" });
+    }
+
+    // 2️⃣ Find user by ID
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 3️⃣ Check OTP expiry
+    if (!user.otp_expires_at || new Date(user.otp_expires_at) < new Date()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    // 4️⃣ Validate email OTP if provided
+    if (email_otp && user.email_otp !== email_otp) {
+      return res.status(400).json({ message: "Invalid email OTP" });
+    }
+
+    // 5️⃣ Validate mobile OTP if provided
+    if (mobile_otp && user.mobile_otp !== mobile_otp) {
+      return res.status(400).json({ message: "Invalid mobile OTP" });
+    }
+
+    // 6️⃣ Mark verified based on OTPs used
+    if (email_otp) user.email_verified = true;
+    if (mobile_otp) user.mobile_verified = true;
+
+    // 7️⃣ Clear OTPs
+    user.email_otp = null;
+    user.mobile_otp = null;
+    user.otp_expires_at = null;
+
+    await user.save();
+
+    return res.status(200).json({
+      message: "OTP verified successfully",
+    });
+  } catch (error) {
+    console.error("verifyEmailOtp error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+export async function forgotPassword(req: Request, res: Response) {
+  const { newPassword, userId }: { newPassword: string; userId: number } = req.body;
+
+  if (!newPassword || !userId) {
+    return res
+      .status(400)
+      .json({ message: "User ID and new password are required." });
+  }
+
+  try {
+    // 1️⃣ Check if user exists and has verified OTP
+    const result = await pool.query(
+      "SELECT reset_token FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const user = result.rows[0];
+
+    // 2️⃣ Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 3️⃣ Update password and clear OTP/reset_token
+    await pool.query(
+      "UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE id = $2",
+      [hashedPassword, userId]
+    );
+
+    res.json({ message: "Your password has been reset successfully." });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+}
