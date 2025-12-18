@@ -204,35 +204,42 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
 export const completeRegistration = async (req: Request, res: Response) => {
   try {
+    // Destructure body fields
     const {
-      userId,
+      userId: rawUserId,
       first_name = "",
       middle_name = "",
       last_name = "",
-      designation,
-      contact_number,
+      designation = "",
+      contact_number = "",
+      profile_image,
     } = req.body;
 
-    // Parse JSON fields safely
+    // Validate userId
+    const userId = parseInt(rawUserId, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid userId" });
+    }
+
+    console.log("Request Body:", req.body);
+
+    // Safely parse JSON fields
     const company_info = JSON.parse(req.body.company_info || "{}");
     const registered_address = JSON.parse(req.body.registered_address || "{}");
-    const communication_address = JSON.parse(
-      req.body.communication_address || "{}"
-    );
+    const communication_address = JSON.parse(req.body.communication_address || "{}");
     const director_info = JSON.parse(req.body.director_info || "[]");
     const filler_info = JSON.parse(req.body.filler_info || "{}");
 
-    // Extract uploaded files
-    const visiting_card =
-      req.files?.["visiting_card_file"]?.[0]?.filename || "";
-    const digital_signature =
-      req.files?.["digital_signature_file"]?.[0]?.filename || "";
+    // Extract uploaded files safely
+    const visiting_card = req.files?.["visiting_card_file"]?.[0]?.filename || "";
+    const digital_signature = req.files?.["digital_signature_file"]?.[0]?.filename || "";
+    const uploaded_profile_image = req.files?.["profile_image"]?.[0]?.filename || "";
 
-    // Add file paths to filler info
+    // Add file paths to filler_info
     filler_info.visiting_card = visiting_card;
     filler_info.digital_signature = digital_signature;
 
-    // SQL query with placeholders
+    // SQL query
     const query = `
       UPDATE users
       SET
@@ -245,8 +252,9 @@ export const completeRegistration = async (req: Request, res: Response) => {
         registered_address = $7,
         director_info = $8,
         filler_info = $9,
-        communication_address = $10
-      WHERE id = $11
+        communication_address = $10,
+        profile_image = $11
+      WHERE id = $12
       RETURNING *;
     `;
 
@@ -261,6 +269,7 @@ export const completeRegistration = async (req: Request, res: Response) => {
       director_info,
       filler_info,
       communication_address,
+      uploaded_profile_image || profile_image, // use uploaded file if exists
       userId,
     ];
 
@@ -279,6 +288,7 @@ export const completeRegistration = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
 
 export const resendOtp = async (req: Request, res: Response) => {
   try {
@@ -483,7 +493,15 @@ export const getUserProfile = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const { password, ...rest } = user.toJSON();
+    const { 
+      email_otp, 
+      mobile_otp, 
+      otp_expires_at, 
+      mobile_verified, 
+      email_verified,
+      password, 
+      ...rest 
+    } = user.toJSON();
 
     const fullUserProfile = {
       ...rest,
@@ -500,6 +518,7 @@ export const getUserProfile = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 const tryParseJSON = (value: any) => {
   try {

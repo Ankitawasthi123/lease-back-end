@@ -26,6 +26,8 @@ class User extends Model {
   public mobile_verified!: boolean;
   public email_verified!: boolean;
 
+  public profile_image!: string;
+
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -58,6 +60,9 @@ User.init(
     otp_expires_at: { type: DataTypes.DATE, allowNull: true },
     mobile_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    profile_image: { type: DataTypes.STRING, allowNull: false },
+
+    
   },
   {
     sequelize,
