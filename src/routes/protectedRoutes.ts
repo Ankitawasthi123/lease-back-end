@@ -18,6 +18,7 @@ import {
   getWarehousesCurrUser,
   getWarehouseById,
   updateWarehouse,
+  deleteWarehouse,
 } from "../controllers/warehouse";
 import {
   createRetail,
@@ -95,6 +96,8 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
+router.delete("/warehouse/delete/:id", protect, deleteWarehouse);
+
 router.post("/retail/create-retail", protect, createRetail);
 router.get("/retail/retail-list", protect, getAllRetails);
 router.get("/retail/retail-user-list", protect, getRetailsCurrUser);

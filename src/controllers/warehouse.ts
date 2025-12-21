@@ -159,3 +159,29 @@ export const updateWarehouse = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const deleteWarehouse = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM warehouse
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "Warehouse not found" });
+    }
+
+    res.status(200).json({
+      message: "Warehouse deleted successfully",
+      data: result.rows[0],
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+

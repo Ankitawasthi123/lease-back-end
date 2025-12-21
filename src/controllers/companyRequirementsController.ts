@@ -130,37 +130,6 @@ export const updateCompanyRequirements = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-export const deleteCompanyRequirements = async (req, res) => {
-  const { id, company_id } = req.body;
-
-  if (!id || !company_id) {
-    return res
-      .status(400)
-      .json({ error: "Both id and company_id are required" });
-  }
-
-  try {
-    const result = await pool.query(
-      `DELETE FROM company_requirements
-       WHERE id = $1 AND company_id = $2
-       RETURNING *`,
-      [id, company_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "No matching record found to delete" });
-    }
-
-    res.status(200).json({ message: "Record successfully deleted" });
-  } catch (err) {
-    console.error("Delete error:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
 export const getCurrRequirment = async (req, res) => {
   const { id } = req.body;
 
@@ -194,7 +163,9 @@ export const getCurrRequirment = async (req, res) => {
 };
 
 export const getCompanyRequirementsList = async (req, res) => {
-  const { company_id, role } = req.body;
+  const { company_id, login_id } = req.body;
+
+  console.log("Request:", { company_id, login_id });
 
   if (!company_id) {
     return res.status(400).json({ error: "Company ID is required" });
@@ -202,63 +173,43 @@ export const getCompanyRequirementsList = async (req, res) => {
 
   try {
     const companyIdParsed = parseInt(company_id, 10);
-
     if (isNaN(companyIdParsed)) {
       return res.status(400).json({ error: "Invalid Company ID format" });
     }
 
-    let requirements = null;
-    if (role === "threepl") {
-      requirements = await pool.query(
-        "SELECT * FROM company_requirements" // fixed table name
-      );
-    } else {
-      requirements = await pool.query(
-        "SELECT * FROM company_requirements WHERE company_id = $1",
-        [companyIdParsed]
-      );
+    let query = "SELECT * FROM company_requirements";
+    const values: any[] = [];
+
+    // ✅ Case 1: If company_id === login_id → return all requirements for the company
+    if (companyIdParsed === parseInt(login_id, 10)) {
+      query += " WHERE company_id = $1";
+      values.push(companyIdParsed);
+    }
+    // ✅ Case 2: Otherwise → return only approved items
+    else {
+      query += " WHERE status = 'approved'";
     }
 
-    if (requirements.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No requirements found for this company" });
+    const requirementsResult = await pool.query(query, values);
+    const requirements = requirementsResult.rows;
+
+    if (requirements.length === 0) {
+      return res.status(404).json({ message: "No requirements found" });
     }
 
-    // Fetch all bids related to these requirements
-    const requirementIds = requirements?.rows?.map((req) => req.id).map(String);
+    // Fetch bids for these requirements
+    const requirementIds = requirements.map((r) => r.id);
     const bidsResult = await pool.query(
       "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
       [requirementIds]
     );
-
     const bids = bidsResult.rows;
 
-    const enrichedRequirements = requirements?.rows
-      ?.map((req) => {
-        let matchingBids;
-
-        if (role === "threepl") {
-          matchingBids = bids.filter(
-            (bid) =>
-              bid.requirement_id === req.id &&
-              bid.pl_details?.id === parseInt(company_id)
-          );
-        } else {
-          matchingBids = bids.filter((bid) => bid.requirement_id === req.id);
-        }
-
-        // 🔍 Only include requirements that have matching bids for "threepl"
-        if (role === "threepl" && matchingBids.length === 0) {
-          return null;
-        }
-
-        return {
-          ...req,
-          bids: matchingBids,
-        };
-      })
-      .filter(Boolean); // ✅ Remove nulls from the final array
+    // Attach bids to requirements
+    const enrichedRequirements = requirements.map((req) => ({
+      ...req,
+      bids: bids.filter((bid) => bid.requirement_id === req.id),
+    }));
 
     res.status(200).json(enrichedRequirements);
   } catch (err) {
@@ -360,3 +311,61 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+export const deleteCompanyRequirements = async (req, res) => {
+  const { requirement_id, company_id } = req.body;
+
+  if (!requirement_id || !company_id) {
+    return res.status(400).json({
+      error: "Requirement ID and Company ID are required",
+    });
+  }
+
+  try {
+    // 🔍 Fetch requirement first
+    const existing = await pool.query(
+      `SELECT id, status, company_id 
+       FROM company_requirements 
+       WHERE id = $1`,
+      [requirement_id]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: "Requirement not found",
+      });
+    }
+
+    const requirement = existing.rows[0];
+
+    // 🔒 Ownership check
+    if (Number(requirement.company_id) !== Number(company_id)) {
+      return res.status(403).json({
+        error: "You are not allowed to delete this requirement",
+      });
+    }
+
+    // 🚫 Status validation
+    if (requirement.status !== "submitted") {
+      return res.status(400).json({
+        error: "Only submitted requirements can be deleted",
+      });
+    }
+
+    // 🗑️ Delete
+    await pool.query(`DELETE FROM company_requirements WHERE id = $1`, [
+      requirement_id,
+    ]);
+
+    return res.status(200).json({
+      message: "Requirement deleted successfully",
+      requirement_id,
+    });
+  } catch (err) {
+    console.error("Delete requirement error:", err);
+    return res.status(500).json({
+      error: "Internal Server Error",
+    });
+  }
+};
+

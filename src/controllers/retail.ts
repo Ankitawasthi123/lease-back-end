@@ -104,7 +104,6 @@ export const getRetailById = async (req: Request, res: Response) => {
 };
 
 // ✅ UPDATE Retail
-// ✅ UPDATE Retail
 export const updateRetail = async (req: Request, res: Response) => {
   const { id, login_id, retail_details, retail_type, retail_compliance } = req.body;
 

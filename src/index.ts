@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import userRoutes from './routes/userRoutes';
 import authRoutes from './routes/authRoutes';
 import protectedRoutes from './routes/protectedRoutes';
+import mapRoutes from "./routes/mapRoutes"
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use(express.json());
 app.use('/api', userRoutes);         
 app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
+app.use('/api', mapRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
