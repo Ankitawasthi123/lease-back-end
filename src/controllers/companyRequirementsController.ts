@@ -24,45 +24,51 @@ export const createRequirement = async (req, res) => {
     requirement_type,
     bid_details,
     distance,
+    status, // ✅ RECEIVE STATUS
   } = req.body;
 
   try {
     const result = await pool.query(
       `INSERT INTO company_requirements (
-    warehouse_location,
-    company_id,
-    warehouse_size,
-    warehouse_compliance,
-    material_details,
-    labour_details,
-    office_expenses,
-    transport,
-    requirement_type,
-    bid_details,
-    distance
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-  RETURNING *`,
-      [
         warehouse_location,
         company_id,
         warehouse_size,
-        JSON.stringify(warehouse_compliance || {}), // ✅
-        JSON.stringify(material_details || {}), // ✅
-        JSON.stringify(labour_details || {}), // ✅
-        JSON.stringify(office_expenses || {}), // ✅
-        JSON.stringify(transport || []), // ✅
+        warehouse_compliance,
+        material_details,
+        labour_details,
+        office_expenses,
+        transport,
         requirement_type,
-        JSON.stringify(bid_details || {}), // ✅
-        JSON.stringify(distance || []), // ✅
+        bid_details,
+        distance,
+        status
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+      )
+      RETURNING *`,
+      [
+        JSON.stringify(warehouse_location || {}),
+        company_id,
+        JSON.stringify(warehouse_size || {}),
+        JSON.stringify(warehouse_compliance || {}),
+        JSON.stringify(material_details || {}),
+        JSON.stringify(labour_details || {}),
+        JSON.stringify(office_expenses || {}),
+        JSON.stringify(transport || []),
+        requirement_type,
+        JSON.stringify(bid_details || {}),
+        JSON.stringify(distance || []),
+        status || "submitted", // ✅ DEFAULT SAFETY
       ]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Create Requirement Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 export const updateCompanyRequirements = async (req, res) => {
   const {

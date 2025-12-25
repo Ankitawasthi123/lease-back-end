@@ -1,48 +1,45 @@
-const axios = require("axios");
+import axios from "axios";
 import { Request, Response } from "express";
 
-const CLIENT_ID = process.env.CLIENT_ID;
-const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const ACCESS_TOKEN_URL = process.env.ACCESS_TOKEN_URL;
-const REDIRECT_URI = process.env.REDIRECT_URI;
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
-export async function getAccessToken() {
-  const url = ACCESS_TOKEN_URL;
-  const params = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-  });
-
-  const res = await axios.post(url, params.toString(), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
-  return res.data.access_token;
-}
-
+/**
+ * Geocode address using OpenStreetMap (Nominatim)
+ * Backend proxy (required by OSM policy)
+ */
 export async function geocodeAddress(req: Request, res: Response) {
+  console.log("Geocode Address Request Received ================================", req.body);
+  
   try {
     const { query } = req.body;
+
     if (!query) {
-      return res.status(400).json({ message: "Address is required" });
+      return res.status(400).json({ message: "Search query is required" });
     }
 
-    const token = await getAccessToken();
-
-    const url = REDIRECT_URI;
-    const response = await axios.get(url, {
+    const response = await axios.get(NOMINATIM_URL, {
       params: {
-        address: query,
-        access_token: token,
-        itemCount: 10,
+        q: query,
+        format: "json",
+        addressdetails: 1,
+        limit: 5,
       },
+      headers: {
+        // 🔴 REQUIRED by OSM policy
+        "User-Agent": "WarehouseApp/1.0 (test@yourdomain.com)",
+      },
+      timeout: 8000,
     });
 
-    console.log("Geocode Result:", response.data);
-    res.json(response.data);
-  } catch (err) {
-    console.error("API Error:", err.response?.data || err.message);
-    res.status(500).json({ message: "Geocoding failed", error: err.message });
+    // ✅ Only send the data array, not the full response object
+    res.status(200).json(response.data);
+  } catch (error: any) {
+    console.error("Nominatim Error:", error.response?.data || error.message);
+
+    // ✅ Only send safe serializable info
+    res.status(500).json({
+      message: "Geocoding failed",
+      error: error.response?.data || error.message,
+    });
   }
 }
-
