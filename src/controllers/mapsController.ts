@@ -25,18 +25,15 @@ export async function geocodeAddress(req: Request, res: Response) {
         limit: 5,
       },
       headers: {
-        // 🔴 REQUIRED by OSM policy
         "User-Agent": "WarehouseApp/1.0 (test@yourdomain.com)",
       },
       timeout: 8000,
     });
 
-    // ✅ Only send the data array, not the full response object
     res.status(200).json(response.data);
   } catch (error: any) {
     console.error("Nominatim Error:", error.response?.data || error.message);
 
-    // ✅ Only send safe serializable info
     res.status(500).json({
       message: "Geocoding failed",
       error: error.response?.data || error.message,

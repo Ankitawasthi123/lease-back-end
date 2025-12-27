@@ -22,7 +22,7 @@ export const createWarehouse = async (req: Request, res: Response) => {
       ) VALUES ($1, $2, $3, $4, $5)
       RETURNING *`,
       [
-        warehouse_location,
+        JSON.stringify(warehouse_location || {}),
         login_id,
         warehouse_size,
         JSON.stringify(warehouse_compliance || {}),
@@ -161,27 +161,52 @@ export const updateWarehouse = async (req: Request, res: Response) => {
 };
 
 export const deleteWarehouse = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { login_id, id } = req.body;
+
+  if (!id || !login_id) {
+    return res.status(400).json({
+      error: "Warehouse ID and Login ID are required",
+    });
+  }
 
   try {
-    const result = await pool.query(
-      `DELETE FROM warehouse
-       WHERE id = $1
-       RETURNING *`,
+    // 🔍 Fetch warehouse first
+    const existing = await pool.query(
+      `SELECT id, login_id 
+       FROM warehouse 
+       WHERE id = $1`,
       [id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Warehouse not found" });
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        error: "Warehouse not found",
+      });
     }
 
-    res.status(200).json({
+    const warehouse = existing.rows[0];
+
+    // 🔒 Ownership check
+    if (Number(warehouse.login_id) !== Number(login_id)) {
+      return res.status(403).json({
+        error: "You are not allowed to delete this warehouse",
+      });
+    }
+
+    // 🗑️ Delete
+    await pool.query(`DELETE FROM warehouse WHERE id = $1`, [
+      id,
+    ]);
+
+    return res.status(200).json({
       message: "Warehouse deleted successfully",
-      data: result.rows[0],
+      id,
     });
   } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error("Delete warehouse error:", err);
+    return res.status(500).json({
+      error: "Internal Server Error",
+    });
   }
 };
 

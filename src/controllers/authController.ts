@@ -28,7 +28,7 @@ const client = twilio(
   process.env.TWILIO_SID as string,
   process.env.TWILIO_AUTH_TOKEN as string
 );
-export const sendMobileOtp = async (phone: string) => {
+export const sendMobileOtp = async (phone: string, otp: string) => {
   try {
     // const verification = await client.verify.v2
     //   .services(process.env.TWILIO_VERIFY_SID as string)

@@ -96,7 +96,7 @@ router.get(
   getWarehouseById
 );
 router.put("/warehouse/update", protect, updateWarehouse);
-router.delete("/warehouse/delete/:id", protect, deleteWarehouse);
+router.delete("/warehouse/delete", protect, deleteWarehouse);
 
 router.post("/retail/create-retail", protect, createRetail);
 router.get("/retail/retail-list", protect, getAllRetails);
