@@ -4,22 +4,25 @@ import pool from "../config/db";
 
 // ✅ CREATE Retail
 export const createRetail = async (req: Request, res: Response) => {
-  const { retail_details, retail_type, retail_compliance, login_id } = req.body;
+  const { retail_details, retail_type, retail_compliance, login_id, status } =
+    req.body;
 
   try {
     const result = await pool.query(
       `INSERT INTO retail (
-    retail_details,
-    retail_type,
-    login_id,
-    retail_compliance
-  ) VALUES ($1, $2, $3, $4)
-  RETURNING *`,
+        retail_details,
+        retail_type,
+        login_id,
+        retail_compliance,
+        status
+      ) VALUES ($1, $2, $3, $4, $5)
+      RETURNING *`,
       [
         retail_details,
-        JSON.stringify(retail_type || []), // ✅ make sure it's JSON text
+        JSON.stringify(retail_type || []), // ✅ ensure JSON text
         login_id,
         JSON.stringify(retail_compliance || {}),
+        status || "pending", // ✅ default value if not provided
       ]
     );
 
@@ -105,7 +108,8 @@ export const getRetailById = async (req: Request, res: Response) => {
 
 // ✅ UPDATE Retail
 export const updateRetail = async (req: Request, res: Response) => {
-  const { id, login_id, retail_details, retail_type, retail_compliance } = req.body;
+  const { id, login_id, retail_details, retail_type, retail_compliance } =
+    req.body;
 
   try {
     // ✅ Check if record exists and belongs to this user
@@ -136,9 +140,9 @@ export const updateRetail = async (req: Request, res: Response) => {
        WHERE login_id = $4 AND id = $5
        RETURNING *`,
       [
-        retail_details || {},                    // leave as object
-        JSON.stringify(normalizedRetailType),   // always JSON text
-        retail_compliance || {},                // leave as object
+        retail_details || {}, // leave as object
+        JSON.stringify(normalizedRetailType), // always JSON text
+        retail_compliance || {}, // leave as object
         login_id,
         id,
       ]
@@ -155,3 +159,66 @@ export const updateRetail = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ✅ DELETE Retail (only when status is submitted & owned by user)
+export const deleteRetail = async (req: Request, res: Response) => {
+  const { retail_id, login_id } = req.params;
+  if (!retail_id || !login_id) {
+    return res.status(400).json({
+      message: "retail_id and login_id are required",
+    });
+  }
+
+  try {
+    // 🔍 Step 1: Fetch retail record
+    const retailResult = await pool.query(
+      `
+      SELECT id, status, login_id
+      FROM retail
+      WHERE id = $1
+      `,
+      [retail_id]
+    );
+
+    if (retailResult.rowCount === 0) {
+      return res.status(404).json({ message: "Retail not found" });
+    }
+
+    const retail = retailResult.rows[0];
+
+    // 🔒 Step 2: Ownership check
+    if (String(retail.login_id) !== String(login_id)) {
+      return res.status(403).json({
+        message: "You are not allowed to delete this retail record",
+      });
+    }
+
+    // 🚫 Step 3: Status check (safe)
+    if (retail.status?.trim().toLowerCase() !== "submitted") {
+      return res.status(400).json({
+        message: "Retail can only be deleted when status is 'submitted'",
+      });
+    }
+
+    // 🗑 Step 4: Delete
+    const deleteResult = await pool.query(
+      `
+      DELETE FROM retail
+      WHERE id = $1
+      RETURNING *
+      `,
+      [retail_id]
+    );
+
+    return res.status(200).json({
+      message: "Retail deleted successfully",
+      data: deleteResult.rows[0],
+    });
+  } catch (error: any) {
+    console.error("Delete Retail Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+
+

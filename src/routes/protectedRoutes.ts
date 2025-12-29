@@ -26,6 +26,7 @@ import {
   getRetailsCurrUser,
   getRetailById,
   updateRetail,
+  deleteRetail,
 } from "../controllers/retail";
 import {
   createPitch,
@@ -103,6 +104,7 @@ router.get("/retail/retail-list", protect, getAllRetails);
 router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
 router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
 router.put("/retail/update", protect, updateRetail);
+router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
 router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
 router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);

@@ -1,8 +1,14 @@
 import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
 import pool from "../config/db";
+import {
+  CreateWarehouseRequest,
+  UpdateWarehouseRequest,
+  DeleteWarehouseRequest,
+  WarehouseResponse,
+} from "../models/warehouse";
 
-export const createWarehouse = async (req: Request, res: Response) => {
+export const createWarehouse = async (req: Request<{}, {}, CreateWarehouseRequest>, res: Response<WarehouseResponse>) => {
   const {
     warehouse_location,
     warehouse_size,
@@ -37,7 +43,7 @@ export const createWarehouse = async (req: Request, res: Response) => {
   }
 };
 
-export const getAllWarehouses = async (req: Request, res: Response) => {
+export const getAllWarehouses = async (req: Request<{}, {}, {}, { login_id?: string }>, res: Response<{ warehouses: WarehouseResponse[] }>) => {
   const { login_id } = req.query;
   try {
     let query = `SELECT * FROM warehouse`;
@@ -60,7 +66,7 @@ export const getAllWarehouses = async (req: Request, res: Response) => {
   }
 };
 
-export const getWarehousesCurrUser = async (req: Request, res: Response) => {
+export const getWarehousesCurrUser = async (req: Request<{ login_id: string }>, res: Response<{ warehouses: WarehouseResponse[] }>) => {
   const { login_id } = req.params;
   try {
     const result = await pool.query(
@@ -74,7 +80,7 @@ export const getWarehousesCurrUser = async (req: Request, res: Response) => {
   }
 };
 
-export const getWarehouseById = async (req: Request, res: Response) => {
+export const getWarehouseById = async (req: Request<{ login_id: string; id: string }>, res: Response<WarehouseResponse>) => {
   const { login_id, id } = req.params;
 
   try {
@@ -111,7 +117,7 @@ export const getWarehouseById = async (req: Request, res: Response) => {
   }
 };
 
-export const updateWarehouse = async (req: Request, res: Response) => {
+export const updateWarehouse = async (req: Request<{}, {}, UpdateWarehouseRequest>, res: Response<WarehouseResponse>) => {
   const { login_id, id } = req.body;
 
   const {
@@ -160,7 +166,7 @@ export const updateWarehouse = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteWarehouse = async (req: Request, res: Response) => {
+export const deleteWarehouse = async (req: Request<{}, {}, DeleteWarehouseRequest>, res: Response<{ message: string; id: string }>) => {
   const { login_id, id } = req.body;
 
   if (!id || !login_id) {
