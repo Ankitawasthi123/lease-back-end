@@ -6,7 +6,6 @@ import pool from "../config/db";
 export const createRetail = async (req: Request, res: Response) => {
   const { retail_details, retail_type, retail_compliance, login_id, status } =
     req.body;
-
   try {
     const result = await pool.query(
       `INSERT INTO retail (
@@ -219,6 +218,3 @@ export const deleteRetail = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
-
-
-

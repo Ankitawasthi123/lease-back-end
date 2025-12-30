@@ -8,13 +8,17 @@ import {
   WarehouseResponse,
 } from "../models/warehouse";
 
-export const createWarehouse = async (req: Request<{}, {}, CreateWarehouseRequest>, res: Response<WarehouseResponse>) => {
+export const createWarehouse = async (
+  req: Request<{}, {}, CreateWarehouseRequest>,
+  res: Response<WarehouseResponse>
+) => {
   const {
     warehouse_location,
     warehouse_size,
     warehouse_compliance,
     material_details,
     login_id,
+    status,
   } = req.body;
 
   try {
@@ -24,8 +28,9 @@ export const createWarehouse = async (req: Request<{}, {}, CreateWarehouseReques
         login_id,
         warehouse_size,
         warehouse_compliance,
-        material_details
-      ) VALUES ($1, $2, $3, $4, $5)
+        material_details,
+        status
+      ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
       [
         JSON.stringify(warehouse_location || {}),
@@ -33,6 +38,7 @@ export const createWarehouse = async (req: Request<{}, {}, CreateWarehouseReques
         warehouse_size,
         JSON.stringify(warehouse_compliance || {}),
         JSON.stringify(material_details || {}),
+        status || "submitted",
       ]
     );
 

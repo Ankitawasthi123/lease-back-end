@@ -8,7 +8,6 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
  * Backend proxy (required by OSM policy)
  */
 export async function geocodeAddress(req: Request, res: Response) {
-  console.log("Geocode Address Request Received ================================", req.body);
   
   try {
     const { query } = req.body;
