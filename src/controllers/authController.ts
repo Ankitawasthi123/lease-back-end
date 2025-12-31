@@ -204,45 +204,84 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
 export const completeRegistration = async (req: Request, res: Response) => {
   try {
-    // Destructure body fields
-    const {
-      userId: rawUserId,
-      first_name = "",
-      middle_name = "",
-      last_name = "",
-      designation = "",
-      contact_number = "",
-      profile_image,
-    } = req.body;
+    console.log("RAW BODY:", req.body);
+    console.log("RAW FILES:", req.files);
 
-    // Validate userId
-    const userId = parseInt(rawUserId, 10);
-    if (isNaN(userId)) {
+    /* ================= USER ID ================= */
+    const rawUserId = req.body.userId ?? req.body.user_id;
+    if (!rawUserId) {
+      return res.status(400).json({ message: "userId is missing" });
+    }
+
+    const userId = Number(rawUserId);
+    if (!Number.isInteger(userId)) {
       return res.status(400).json({ message: "Invalid userId" });
     }
 
-    console.log("Request Body:", req.body);
+    /* ================= BASIC FIELDS ================= */
+    const first_name = req.body.first_name || "";
+    const middle_name = req.body.middle_name || "";
+    const last_name = req.body.last_name || "";
+    const designation = req.body.designation || "";
+    const contact_number = req.body.contact_number || "";
 
-    // Safely parse JSON fields
+    /* ================= JSON FIELDS ================= */
     const company_info = JSON.parse(req.body.company_info || "{}");
     const registered_address = JSON.parse(req.body.registered_address || "{}");
     const communication_address = JSON.parse(req.body.communication_address || "{}");
     const director_info = JSON.parse(req.body.director_info || "[]");
-    const filler_info = JSON.parse(req.body.filler_info || "{}");
+    const incomingFillerInfo = JSON.parse(req.body.filler_info || "{}");
 
-    // Extract uploaded files safely
-    const visiting_card = req.files?.["visiting_card_file"]?.[0]?.filename || "";
-    const digital_signature = req.files?.["digital_signature_file"]?.[0]?.filename || "";
-    const uploaded_profile_image = req.files?.["profile_image"]?.[0]?.filename || "";
+    /* ================= FILES ================= */
+    const visitingCardBinary =
+      req.files?.["visiting_card_file"]?.[0]?.filename;
 
-    // Add file paths to filler_info
-    filler_info.visiting_card = visiting_card;
-    filler_info.digital_signature = digital_signature;
+    const digitalSignatureBinary =
+      req.files?.["digital_signature_file"]?.[0]?.filename;
 
-    // SQL query
-    const query = `
-      UPDATE users
-      SET
+    const profileImageBinary =
+      req.files?.["profile_image"]?.[0]?.filename;
+
+    /* ================= FETCH EXISTING USER ================= */
+    const userResult = await pool.query(
+      "SELECT filler_info, profile_image FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (userResult.rowCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const existingFillerInfo = userResult.rows[0].filler_info || {};
+    const existingProfileImage = userResult.rows[0].profile_image;
+
+    /* ================= MERGE FILLER INFO SAFELY ================= */
+    const filler_info = {
+      ...existingFillerInfo,
+      ...incomingFillerInfo,
+    };
+
+    // ✅ visiting card
+    if (visitingCardBinary) {
+      filler_info.visiting_card = visitingCardBinary;
+    } else if (incomingFillerInfo.visiting_card?.trim()) {
+      filler_info.visiting_card = incomingFillerInfo.visiting_card;
+    } else {
+      filler_info.visiting_card = existingFillerInfo.visiting_card;
+    }
+
+    // ✅ digital signature
+    if (digitalSignatureBinary) {
+      filler_info.digital_signature = digitalSignatureBinary;
+    } else if (incomingFillerInfo.digital_signature?.trim()) {
+      filler_info.digital_signature = incomingFillerInfo.digital_signature;
+    } else {
+      filler_info.digital_signature = existingFillerInfo.digital_signature;
+    }
+
+    /* ================= BUILD QUERY ================= */
+    let query = `
+      UPDATE users SET
         first_name = $1,
         middle_name = $2,
         last_name = $3,
@@ -252,13 +291,10 @@ export const completeRegistration = async (req: Request, res: Response) => {
         registered_address = $7,
         director_info = $8,
         filler_info = $9,
-        communication_address = $10,
-        profile_image = $11
-      WHERE id = $12
-      RETURNING *;
+        communication_address = $10
     `;
 
-    const values = [
+    const values: any[] = [
       first_name,
       middle_name,
       last_name,
@@ -269,15 +305,23 @@ export const completeRegistration = async (req: Request, res: Response) => {
       director_info,
       filler_info,
       communication_address,
-      uploaded_profile_image || profile_image, // use uploaded file if exists
-      userId,
     ];
 
-    const result = await pool.query(query, values);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "User not found" });
+    // ✅ profile image (binary > name > keep existing)
+    if (profileImageBinary) {
+      query += `, profile_image = $${values.length + 1}`;
+      values.push(profileImageBinary);
+    } else if (req.body.profile_image?.trim()) {
+      query += `, profile_image = $${values.length + 1}`;
+      values.push(req.body.profile_image);
+    } else {
+      // keep existing → do nothing
     }
+
+    query += ` WHERE id = $${values.length + 1} RETURNING *`;
+    values.push(userId);
+
+    const result = await pool.query(query, values);
 
     return res.status(200).json({
       message: "User updated successfully",
@@ -288,7 +332,6 @@ export const completeRegistration = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
-
 
 export const resendOtp = async (req: Request, res: Response) => {
   try {
@@ -518,7 +561,6 @@ export const getUserProfile = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 const tryParseJSON = (value: any) => {
   try {

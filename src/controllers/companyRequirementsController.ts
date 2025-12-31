@@ -170,7 +170,7 @@ export const getCurrRequirment = async (req, res) => {
 
 export const getCompanyRequirementsList = async (req, res) => {
   const { company_id, login_id } = req.body;
-
+  
   console.log("Request:", { company_id, login_id });
 
   if (!company_id) {

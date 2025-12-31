@@ -60,7 +60,7 @@ User.init(
     otp_expires_at: { type: DataTypes.DATE, allowNull: true },
     mobile_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
-    profile_image: { type: DataTypes.STRING, allowNull: false },
+    profile_image: { type: DataTypes.STRING, allowNull: true },
 
     
   },
