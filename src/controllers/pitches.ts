@@ -159,6 +159,7 @@ export const updatePitch = async (req: Request, res: Response) => {
     const {
       id,
       login_id,
+      warehouse_id,
       warehouse_location,
       warehouse_size,
       warehouse_compliance,
@@ -166,34 +167,56 @@ export const updatePitch = async (req: Request, res: Response) => {
       justification,
     } = req.body;
 
-    const parsedCompliance = JSON.parse(warehouse_compliance || "{}");
-    const parsedMaterial = JSON.parse(material_details || "{}");
+    // ---------- SAFE JSON PARSER ----------
+    const safeParse = (val: any) => {
+      if (!val) return null;
+      if (typeof val === "object") return val;
+      try {
+        return JSON.parse(val);
+      } catch {
+        return null;
+      }
+    };
 
-    // Fetch existing pitch
-    const existing = await pool.query(
-      `SELECT * FROM pitches WHERE login_id = $1 AND id = $2`,
-      [login_id, id]
+    const parsedLocation = safeParse(warehouse_location);
+    const parsedCompliance = safeParse(warehouse_compliance) || {};
+    const parsedMaterial = safeParse(material_details) || {};
+
+    // ---------- AUTH CHECK ----------
+    const authCheck = await pool.query(
+      `SELECT image_files, pdf_files 
+       FROM pitches 
+       WHERE id = $1 AND login_id = $2 AND warehouse_id = $3`,
+      [Number(id), Number(login_id), Number(warehouse_id)]
     );
 
-    if (existing.rows.length === 0) {
-      return res.status(404).json({
-        error: "You are not authorized to edit the pitch details.",
+    if (authCheck.rowCount === 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized pitch update",
       });
     }
 
-    const existingPitch = existing.rows[0];
+    const existingPitch = authCheck.rows[0];
 
-    // Uploaded image files
-    const imageFiles = (req.files as any)?.images || [];
-    const uploadedImages = imageFiles.map((file: Express.Multer.File) => ({
-      filename: file.filename,
-      mimetype: file.mimetype,
-      size: file.size,
-      url: `/uploads/images/${file.filename}`,
-    }));
+    // ---------- FILE HANDLING ----------
+    const files: any = req.files || {};
 
-    // PDF file
-    const pdfFile = (req.files as any)?.pdf_file?.[0];
+    const imageFiles = Array.isArray(files.images)
+      ? files.images
+      : [];
+
+    const uploadedImages =
+      imageFiles.length > 0
+        ? imageFiles.map((file: Express.Multer.File) => ({
+            filename: file.filename,
+            mimetype: file.mimetype,
+            size: file.size,
+            url: `/uploads/images/${file.filename}`,
+          }))
+        : existingPitch.image_files || [];
+
+    const pdfFile = files.pdf_file?.[0];
     const pdfMeta = pdfFile
       ? {
           filename: pdfFile.filename,
@@ -201,37 +224,50 @@ export const updatePitch = async (req: Request, res: Response) => {
           size: pdfFile.size,
           url: `/uploads/pdf/${pdfFile.filename}`,
         }
-      : existingPitch.pdf_files; // ✅ Keep existing PDF if not uploaded
+      : existingPitch.pdf_files;
 
-    // ===== UPDATE query =====
+    // ---------- UPDATE ----------
     const result = await pool.query(
       `UPDATE pitches
-       SET warehouse_location = $1,
-           warehouse_size = $2,
+       SET warehouse_location   = $1,
+           warehouse_size       = $2,
            warehouse_compliance = $3,
-           material_details = $4,
-           justification = $5,
-           image_files = $6,
-           pdf_files = $7
-       WHERE login_id = $8 AND id = $9
+           material_details     = $4,
+           justification        = $5,
+           image_files          = $6,
+           pdf_files            = $7,
+           updated_at           = NOW()
+       WHERE id = $8 AND login_id = $9 AND warehouse_id = $10
        RETURNING *`,
       [
-        warehouse_location,
+        JSON.stringify(parsedLocation),
         warehouse_size,
         JSON.stringify(parsedCompliance),
         JSON.stringify(parsedMaterial),
-        justification || null,
+        justification ?? null,
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
-        login_id,
-        id,
+        Number(id),
+        Number(login_id),
+        Number(warehouse_id),
       ]
     );
 
-    res.status(200).json(result.rows[0]);
+    // ---------- SUCCESS ----------
+    return res.status(200).json({
+      success: true,
+      message: "Pitch updated successfully",
+      data: result.rows[0],
+    });
   } catch (err: any) {
-    console.error("Error updating pitch:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Update pitch error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update pitch",
+    });
   }
 };
+
+
+
 
