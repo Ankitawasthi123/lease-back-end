@@ -510,44 +510,53 @@ export const logOutUser = async (req: Request, res: Response) => {
 };
 
 export const getUserProfile = async (req: Request, res: Response) => {
-  // Try to get userId from JWT cookie first
-  let userId;
-  const token = req.cookies?.token;
+  let userId: number | undefined;
 
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-      userId = decoded.id;
-    } catch (err) {
-      console.warn("Invalid token:", err);
+  /* 1️⃣ PRIORITY: payload userId */
+  if (req.body?.userId) {
+    userId = Number(req.body.userId);
+  }
+
+  /* 2️⃣ FALLBACK: logged-in user from JWT */
+  if (!userId) {
+    const token = req.cookies?.token;
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
+        userId = decoded.id;
+      } catch (err) {
+        return res.status(401).json({ message: "Invalid token" });
+      }
     }
   }
 
-  // Fallback to request body
-  userId = userId || req.body.userId;
-
+  /* 3️⃣ Still no userId */
   if (!userId) {
     return res.status(400).json({ message: "User ID required" });
   }
 
   try {
     const user = await User.findByPk(userId);
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const { 
-      email_otp, 
-      mobile_otp, 
-      otp_expires_at, 
-      mobile_verified, 
+    /* ❌ remove sensitive fields */
+    const {
+      password,
+      email_otp,
+      mobile_otp,
+      otp_expires_at,
+      mobile_verified,
       email_verified,
-      password, 
-      ...rest 
+      ...safeUser
     } = user.toJSON();
 
+    /* ✅ parse JSON fields */
     const fullUserProfile = {
-      ...rest,
+      ...safeUser,
       company_info: tryParseJSON(user.company_info),
       registered_address: tryParseJSON(user.registered_address),
       communication_address: tryParseJSON(user.communication_address),
@@ -555,12 +564,13 @@ export const getUserProfile = async (req: Request, res: Response) => {
       filler_info: tryParseJSON(user.filler_info),
     };
 
-    res.status(200).json(fullUserProfile);
+    return res.status(200).json(fullUserProfile);
   } catch (err) {
     console.error("Error in getUserProfile:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
+
 
 const tryParseJSON = (value: any) => {
   try {
