@@ -11,6 +11,7 @@ export const createPitch = async (req: Request, res: Response) => {
       warehouse_compliance,
       material_details,
       justification,
+      rate_details,
     } = req.body;
 
     // Parse JSON strings if necessary (from form-data)
@@ -48,8 +49,9 @@ export const createPitch = async (req: Request, res: Response) => {
         material_details,
         justification,
         image_files,
-        pdf_files
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        pdf_files,
+        rate_details,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *`,
       [
         warehouse_location,
@@ -60,6 +62,7 @@ export const createPitch = async (req: Request, res: Response) => {
         JSON.stringify(parsedMaterial),
         justification || "",
         JSON.stringify(uploadedImages),
+        JSON.stringify(rate_details),
         JSON.stringify(pdfMeta),
       ]
     );
@@ -165,6 +168,7 @@ export const updatePitch = async (req: Request, res: Response) => {
       warehouse_compliance,
       material_details,
       justification,
+      rate_details,
     } = req.body;
 
     // ---------- SAFE JSON PARSER ----------
@@ -236,8 +240,9 @@ export const updatePitch = async (req: Request, res: Response) => {
            justification        = $5,
            image_files          = $6,
            pdf_files            = $7,
+           rate_details         = $8,
            updated_at           = NOW()
-       WHERE id = $8 AND login_id = $9 AND warehouse_id = $10
+       WHERE id = $9 AND login_id = $10 AND warehouse_id = $11
        RETURNING *`,
       [
         JSON.stringify(parsedLocation),
@@ -247,6 +252,7 @@ export const updatePitch = async (req: Request, res: Response) => {
         justification ?? null,
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
+        rate_details,
         Number(id),
         Number(login_id),
         Number(warehouse_id),

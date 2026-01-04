@@ -49,7 +49,10 @@ export const createWarehouse = async (
   }
 };
 
-export const getAllWarehouses = async (req: Request<{}, {}, {}, { login_id?: string }>, res: Response<{ warehouses: WarehouseResponse[] }>) => {
+export const getAllWarehouses = async (
+  req: Request<{}, {}, {}, { login_id?: string }>,
+  res: Response<{ warehouses: WarehouseResponse[] }>
+) => {
   const { login_id } = req.query;
   try {
     let query = `SELECT * FROM warehouse`;
@@ -72,7 +75,10 @@ export const getAllWarehouses = async (req: Request<{}, {}, {}, { login_id?: str
   }
 };
 
-export const getWarehousesCurrUser = async (req: Request<{ login_id: string }>, res: Response<{ warehouses: WarehouseResponse[] }>) => {
+export const getWarehousesCurrUser = async (
+  req: Request<{ login_id: string }>,
+  res: Response<{ warehouses: WarehouseResponse[] }>
+) => {
   const { login_id } = req.params;
   try {
     const result = await pool.query(
@@ -86,7 +92,10 @@ export const getWarehousesCurrUser = async (req: Request<{ login_id: string }>, 
   }
 };
 
-export const getWarehouseById = async (req: Request<{ login_id: string; id: string }>, res: Response<WarehouseResponse>) => {
+export const getWarehouseById = async (
+  req: Request<{ login_id: string; id: string }>,
+  res: Response<WarehouseResponse>
+) => {
   const { login_id, id } = req.params;
 
   try {
@@ -111,7 +120,15 @@ export const getWarehouseById = async (req: Request<{ login_id: string; id: stri
     if (pitchesResult.rows.length > 0) {
       return res.status(200).json({
         ...warehouse,
-        pitches: warehouse?.login_id === login_id && pitchesResult.rows,
+        pitches:
+          warehouse.login_id === login_id
+            ? pitchesResult.rows
+            : (() => {
+                const pitch = pitchesResult.rows.find(
+                  (p) => p.login_id === login_id
+                );
+                return pitch ? { pitch_id: pitch.id } : null;
+              })(),
       });
     }
 
@@ -123,7 +140,10 @@ export const getWarehouseById = async (req: Request<{ login_id: string; id: stri
   }
 };
 
-export const updateWarehouse = async (req: Request<{}, {}, UpdateWarehouseRequest>, res: Response<WarehouseResponse>) => {
+export const updateWarehouse = async (
+  req: Request<{}, {}, UpdateWarehouseRequest>,
+  res: Response<WarehouseResponse>
+) => {
   const { login_id, id } = req.body;
 
   const {
@@ -172,7 +192,10 @@ export const updateWarehouse = async (req: Request<{}, {}, UpdateWarehouseReques
   }
 };
 
-export const deleteWarehouse = async (req: Request<{}, {}, DeleteWarehouseRequest>, res: Response<{ message: string; id: string }>) => {
+export const deleteWarehouse = async (
+  req: Request<{}, {}, DeleteWarehouseRequest>,
+  res: Response<{ message: string; id: string }>
+) => {
   const { login_id, id } = req.body;
 
   if (!id || !login_id) {
@@ -206,9 +229,7 @@ export const deleteWarehouse = async (req: Request<{}, {}, DeleteWarehouseReques
     }
 
     // 🗑️ Delete
-    await pool.query(`DELETE FROM warehouse WHERE id = $1`, [
-      id,
-    ]);
+    await pool.query(`DELETE FROM warehouse WHERE id = $1`, [id]);
 
     return res.status(200).json({
       message: "Warehouse deleted successfully",
@@ -221,4 +242,3 @@ export const deleteWarehouse = async (req: Request<{}, {}, DeleteWarehouseReques
     });
   }
 };
-
