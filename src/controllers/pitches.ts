@@ -14,12 +14,25 @@ export const createPitch = async (req: Request, res: Response) => {
       rate_details,
     } = req.body;
 
-    // Parse JSON strings if necessary (from form-data)
-    const parsedCompliance = JSON.parse(warehouse_compliance || "{}");
-    const parsedMaterial = JSON.parse(material_details || "{}");
+    // ---------- SAFE JSON PARSING ----------
+    const safeParse = (val: any, fallback: any = {}) => {
+      if (!val) return fallback;
+      if (typeof val === "object") return val;
+      try {
+        return JSON.parse(val);
+      } catch {
+        return fallback;
+      }
+    };
 
-    // Uploaded image files
-    const imageFiles = (req.files as any)?.images || [];
+    const parsedCompliance = safeParse(warehouse_compliance);
+    const parsedMaterial = safeParse(material_details);
+
+    // ---------- FILE HANDLING ----------
+    const files: any = req.files || {};
+
+    // Handle multiple image uploads
+    const imageFiles = Array.isArray(files.images) ? files.images : [];
     const uploadedImages = imageFiles.map((file: Express.Multer.File) => ({
       filename: file.filename,
       mimetype: file.mimetype,
@@ -27,8 +40,8 @@ export const createPitch = async (req: Request, res: Response) => {
       url: `/uploads/images/${file.filename}`,
     }));
 
-    // Uploaded PDF file
-    const pdfFile = (req.files as any)?.pdf_file?.[0];
+    // Handle PDF upload
+    const pdfFile = files.pdf_file?.[0];
     const pdfMeta = pdfFile
       ? {
           filename: pdfFile.filename,
@@ -38,7 +51,7 @@ export const createPitch = async (req: Request, res: Response) => {
         }
       : null;
 
-    // Insert into DB
+    // ---------- INSERT INTO DB ----------
     const result = await pool.query(
       `INSERT INTO pitches (
         warehouse_location,
@@ -51,26 +64,36 @@ export const createPitch = async (req: Request, res: Response) => {
         image_files,
         pdf_files,
         rate_details,
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        created_at,
+        updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
       RETURNING *`,
       [
-        warehouse_location,
-        warehouse_id,
-        login_id,
-        warehouse_size,
+        warehouse_location ?? null,
+        Number(warehouse_id),
+        Number(login_id),
+        warehouse_size ?? null,
         JSON.stringify(parsedCompliance),
         JSON.stringify(parsedMaterial),
-        justification || "",
+        justification ?? "",
         JSON.stringify(uploadedImages),
-        JSON.stringify(rate_details),
         JSON.stringify(pdfMeta),
+        rate_details,
       ]
     );
 
-    res.status(201).json(result.rows[0]);
+    return res.status(201).json({
+      success: true,
+      message: "Pitch created successfully",
+      data: result.rows[0],
+    });
   } catch (err: any) {
-    console.error("Error creating pitch:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Create pitch error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create pitch",
+      error: err.message,
+    });
   }
 };
 
