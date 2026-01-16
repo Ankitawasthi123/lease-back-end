@@ -11,7 +11,11 @@ import {
   getCompanyList,
   getRequirementDetails,
 } from "../controllers/companyRequirementsController";
-import { createBid } from "../controllers/bidsController";
+import {
+  createBid,
+  getBidsForUserAndCompany,
+  getBidsCompanyList,
+} from "../controllers/bidsController";
 import {
   createWarehouse,
   getAllWarehouses,
@@ -19,6 +23,7 @@ import {
   getWarehouseById,
   updateWarehouse,
   deleteWarehouse,
+  getWarehouseCompanyList,
 } from "../controllers/warehouse";
 import {
   createRetail,
@@ -83,19 +88,30 @@ router.post("/company/requirement", protect, getCurrRequirment);
 router.post(
   "/company/company-requirements-list",
   protect,
-  getCompanyRequirementsList
+  getCompanyRequirementsList,
 );
 router.get("/company/company-list", protect, getCompanyList);
 router.post("/company/requirment-details", protect, getRequirementDetails);
 router.post("/bids/add-bid", protect, createBid);
+
+router.post("/bids/get-bid-byid", protect, getBidsForUserAndCompany);
+router.post("/bids/bid-company-list", protect, getBidsCompanyList);
+
 router.post("/warehouse/create-warehouse", protect, createWarehouse);
 router.get("/warehouse/warehouse-list", protect, getAllWarehouses);
 router.get("/warehouse/warehouse-user-list", protect, getWarehousesCurrUser);
 router.get(
   "/warehouse/warehouse-details/:login_id/:id",
   protect,
-  getWarehouseById
+  getWarehouseById,
 );
+
+router.get(
+  "/warehouse/warehouse-company", // ✅ Add leading slash
+  protect,
+  getWarehouseCompanyList,
+);
+
 router.put("/warehouse/update", protect, updateWarehouse);
 router.delete("/warehouse/delete", protect, deleteWarehouse);
 
@@ -111,7 +127,7 @@ router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
 router.get(
   "/pitch/pitch-details/:login_id/:warehouse_id",
   protect,
-  getPitchByLoginAndWarehouseId
+  getPitchByLoginAndWarehouseId,
 );
 router.get("/pitch/:pitch_id", protect, getPitchById);
 
@@ -120,10 +136,8 @@ router.put("/retail-pitch/update-pitch", protect, cpUpload, updateRetailPitch);
 router.get(
   "/retail-pitch/pitch-details/:login_id/:retail_id",
   protect,
-  getRetailPitchByLoginAndRetailId
+  getRetailPitchByLoginAndRetailId,
 );
 router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
-
-
 
 export default router;

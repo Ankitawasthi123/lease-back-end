@@ -1,6 +1,7 @@
 import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
 import pool from "../config/db";
+import User from "../models/User";
 
 interface CompanyRequirement {
   company_id: string;
@@ -24,7 +25,7 @@ export const createRequirement = async (req, res) => {
     requirement_type,
     bid_details,
     distance,
-    status, // ✅ RECEIVE STATUS
+    status,
   } = req.body;
 
   try {
@@ -41,9 +42,10 @@ export const createRequirement = async (req, res) => {
         requirement_type,
         bid_details,
         distance,
-        status
+        status,
+        created_date
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()
       )
       RETURNING *`,
       [
@@ -58,7 +60,7 @@ export const createRequirement = async (req, res) => {
         requirement_type,
         JSON.stringify(bid_details || {}),
         JSON.stringify(distance || []),
-        status || "submitted", // ✅ DEFAULT SAFETY
+        status || "submitted",
       ]
     );
 
@@ -68,7 +70,6 @@ export const createRequirement = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 export const updateCompanyRequirements = async (req, res) => {
   const {
@@ -170,59 +171,72 @@ export const getCurrRequirment = async (req, res) => {
 
 export const getCompanyRequirementsList = async (req, res) => {
   const { company_id, login_id } = req.body;
-  
-  console.log("Request:", { company_id, login_id });
 
-  if (!company_id) {
-    return res.status(400).json({ error: "Company ID is required" });
+  if (!company_id || !login_id) {
+    return res
+      .status(400)
+      .json({ error: "Company ID and login ID are required" });
   }
 
   try {
     const companyIdParsed = parseInt(company_id, 10);
-    if (isNaN(companyIdParsed)) {
-      return res.status(400).json({ error: "Invalid Company ID format" });
+    const loginIdParsed = parseInt(login_id, 10);
+
+    if (isNaN(companyIdParsed) || isNaN(loginIdParsed)) {
+      return res.status(400).json({ error: "Invalid ID format" });
     }
 
+    // 🔹 Fetch user
+    const user = await User.findByPk(loginIdParsed);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const isAdmin = user.role === "admin";
+
+    // 🔹 Build query
     let query = "SELECT * FROM company_requirements";
     const values: any[] = [];
 
-    // ✅ Case 1: If company_id === login_id → return all requirements for the company
-    if (companyIdParsed === parseInt(login_id, 10)) {
-      query += " WHERE company_id = $1";
+    if (!isAdmin) {
+      // ✅ Non-admin: only approved + company-specific
+      query += " WHERE company_id = $1 AND status = 'approved'";
       values.push(companyIdParsed);
     }
-    // ✅ Case 2: Otherwise → return only approved items
-    else {
-      query += " WHERE status = 'approved'";
-    }
+    // ✅ Admin: no filter (gets all statuses)
 
     const requirementsResult = await pool.query(query, values);
     const requirements = requirementsResult.rows;
 
+    // ✅ Return blank array if nothing found (no error)
     if (requirements.length === 0) {
-      return res.status(404).json({ message: "No requirements found" });
+      return res.status(200).json([]);
     }
 
-    // Fetch bids for these requirements
-    const requirementIds = requirements.map((r) => r.id);
+    // 🔹 Attach bids
+    const requirementIds = requirements.map(r => r.id);
+
     const bidsResult = await pool.query(
       "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
       [requirementIds]
     );
+
     const bids = bidsResult.rows;
 
-    // Attach bids to requirements
-    const enrichedRequirements = requirements.map((req) => ({
+    const enrichedRequirements = requirements.map(req => ({
       ...req,
-      bids: bids.filter((bid) => bid.requirement_id === req.id),
+      bids: bids.filter(bid => bid.requirement_id === req.id),
     }));
 
-    res.status(200).json(enrichedRequirements);
+    return res.status(200).json(enrichedRequirements);
+
   } catch (err) {
     console.error("Error fetching company requirements:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 export const getCompanyList = async (req, res, next) => {
   try {
@@ -319,59 +333,72 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
 };
 
 export const deleteCompanyRequirements = async (req, res) => {
-  const { requirement_id, company_id } = req.body;
-
+  const { company_id, requirement_id } = req.body;
   if (!requirement_id || !company_id) {
     return res.status(400).json({
-      error: "Requirement ID and Company ID are required",
+      error: "Requirement ID and login ID are required",
     });
   }
 
   try {
-    // 🔍 Fetch requirement first
-    const existing = await pool.query(
-      `SELECT id, status, company_id 
-       FROM company_requirements 
-       WHERE id = $1`,
-      [requirement_id]
+    const requirementIdParsed = parseInt(requirement_id, 10);
+    const loginIdParsed = parseInt(company_id, 10);
+
+    if (isNaN(requirementIdParsed) || isNaN(loginIdParsed)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+
+    // ✅ Step 1: Fetch user and check role
+    const userResult = await pool.query(
+      "SELECT id, role FROM users WHERE id = $1",
+      [loginIdParsed]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+    const isAdmin = user.role === "admin";
+
+    // ✅ Step 2: Fetch requirement
+    const requirementResult = await pool.query(
+      "SELECT id, status, company_id FROM company_requirements WHERE id = $1",
+      [requirementIdParsed]
     );
 
-    if (existing.rows.length === 0) {
-      return res.status(404).json({
-        error: "Requirement not found",
-      });
+    if (requirementResult.rows.length === 0) {
+      return res.status(404).json({ error: "Requirement not found" });
     }
 
-    const requirement = existing.rows[0];
+    const requirement = requirementResult.rows[0];
 
-    // 🔒 Ownership check
-    if (Number(requirement.company_id) !== Number(company_id)) {
-      return res.status(403).json({
-        error: "You are not allowed to delete this requirement",
-      });
+    // 🔒 Step 3: Check permissions for normal users
+    if (!isAdmin) {
+      if (Number(requirement.company_id) !== loginIdParsed) {
+        return res
+          .status(403)
+          .json({ error: "You are not allowed to delete this requirement" });
+      }
+
+      if (requirement.status !== "submitted") {
+        return res
+          .status(400)
+          .json({ error: "Only submitted requirements can be deleted" });
+      }
     }
 
-    // 🚫 Status validation
-    if (requirement.status !== "submitted") {
-      return res.status(400).json({
-        error: "Only submitted requirements can be deleted",
-      });
-    }
-
-    // 🗑️ Delete
-    await pool.query(`DELETE FROM company_requirements WHERE id = $1`, [
-      requirement_id,
+    // 🗑️ Step 4: Delete
+    await pool.query("DELETE FROM company_requirements WHERE id = $1", [
+      requirementIdParsed,
     ]);
 
     return res.status(200).json({
       message: "Requirement deleted successfully",
-      requirement_id,
+      requirement_id: requirementIdParsed,
     });
   } catch (err) {
     console.error("Delete requirement error:", err);
-    return res.status(500).json({
-      error: "Internal Server Error",
-    });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 };
 

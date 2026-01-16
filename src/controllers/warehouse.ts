@@ -19,6 +19,7 @@ export const createWarehouse = async (
     material_details,
     login_id,
     status,
+    company_details,
   } = req.body;
 
   try {
@@ -29,8 +30,10 @@ export const createWarehouse = async (
         warehouse_size,
         warehouse_compliance,
         material_details,
-        status
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        status,
+        company_details,
+        created_date
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
       RETURNING *`,
       [
         JSON.stringify(warehouse_location || {}),
@@ -39,6 +42,7 @@ export const createWarehouse = async (
         JSON.stringify(warehouse_compliance || {}),
         JSON.stringify(material_details || {}),
         status || "submitted",
+        JSON.stringify(company_details || {}),
       ]
     );
 
@@ -240,5 +244,32 @@ export const deleteWarehouse = async (
     return res.status(500).json({
       error: "Internal Server Error",
     });
+  }
+};
+
+export const getWarehouseCompanyList = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT DISTINCT
+        login_id,
+        company_details
+      FROM warehouse
+      WHERE login_id IS NOT NULL
+      ORDER BY company_details ASC
+    `);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "No warehouse companies found" });
+    }
+
+    res.status(200).json(
+      result.rows.map((row) => ({
+        login_id: row.login_id,
+        company_details: row.company_details,
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching warehouse company list:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
