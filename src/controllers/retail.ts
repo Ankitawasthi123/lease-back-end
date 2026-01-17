@@ -4,8 +4,14 @@ import pool from "../config/db";
 
 // ✅ CREATE Retail
 export const createRetail = async (req: Request, res: Response) => {
-  const { retail_details, retail_type, retail_compliance, login_id, status } =
-    req.body;
+  const {
+    retail_details,
+    retail_type,
+    retail_compliance,
+    login_id,
+    status,
+    company_details,
+  } = req.body;
   try {
     const result = await pool.query(
       `INSERT INTO retail (
@@ -13,8 +19,9 @@ export const createRetail = async (req: Request, res: Response) => {
         retail_type,
         login_id,
         retail_compliance,
-        status
-      ) VALUES ($1, $2, $3, $4, $5)
+        status,
+        company_details
+      ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *`,
       [
         retail_details,
@@ -22,34 +29,13 @@ export const createRetail = async (req: Request, res: Response) => {
         login_id,
         JSON.stringify(retail_compliance || {}),
         status || "pending", // ✅ default value if not provided
-      ]
+        JSON.stringify(company_details || {}),
+      ],
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// ✅ GET All Retails (optionally by login_id)
-export const getAllRetails = async (req: Request, res: Response) => {
-  const { login_id } = req.query;
-  try {
-    let query = `SELECT * FROM retail`;
-    let values: any[] = [];
-
-    if (login_id) {
-      query += ` WHERE login_id = $1`;
-      values.push(login_id);
-    }
-
-    query += ` ORDER BY id DESC`;
-
-    const result = await pool.query(query, values);
-    res.status(200).json({ retails: result.rows });
-  } catch (err: any) {
-    console.error("Error fetching retails:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -60,7 +46,7 @@ export const getRetailsCurrUser = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT * FROM retail WHERE login_id = $1 ORDER BY id DESC`,
-      [login_id]
+      [login_id],
     );
     res.status(200).json({ retails: result.rows });
   } catch (err: any) {
@@ -78,7 +64,7 @@ export const getRetailById = async (req: Request, res: Response) => {
   try {
     const retailResult = await pool.query(
       `SELECT * FROM retail WHERE id = $1 LIMIT 1`,
-      [id]
+      [id],
     );
 
     if (retailResult.rows.length === 0) {
@@ -89,7 +75,7 @@ export const getRetailById = async (req: Request, res: Response) => {
 
     const pitchesResult = await pool.query(
       `SELECT * FROM retail_pitches WHERE retail_id = $1`,
-      [id]
+      [id],
     );
     if (pitchesResult.rows.length > 0) {
       return res.status(200).json({
@@ -114,7 +100,7 @@ export const updateRetail = async (req: Request, res: Response) => {
     // ✅ Check if record exists and belongs to this user
     const existing = await pool.query(
       `SELECT * FROM retail WHERE login_id = $1 AND id = $2`,
-      [login_id, id]
+      [login_id, id],
     );
 
     if (existing.rows.length === 0) {
@@ -127,8 +113,8 @@ export const updateRetail = async (req: Request, res: Response) => {
     const normalizedRetailType = Array.isArray(retail_type)
       ? retail_type
       : retail_type
-      ? [retail_type]
-      : [];
+        ? [retail_type]
+        : [];
 
     // ✅ Update record
     const result = await pool.query(
@@ -144,7 +130,7 @@ export const updateRetail = async (req: Request, res: Response) => {
         retail_compliance || {}, // leave as object
         login_id,
         id,
-      ]
+      ],
     );
 
     const row = result.rows[0];
@@ -176,7 +162,7 @@ export const deleteRetail = async (req: Request, res: Response) => {
       FROM retail
       WHERE id = $1
       `,
-      [retail_id]
+      [retail_id],
     );
 
     if (retailResult.rowCount === 0) {
@@ -206,7 +192,7 @@ export const deleteRetail = async (req: Request, res: Response) => {
       WHERE id = $1
       RETURNING *
       `,
-      [retail_id]
+      [retail_id],
     );
 
     return res.status(200).json({
@@ -218,3 +204,68 @@ export const deleteRetail = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
+export const getRetailCompanyList = async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`
+      SELECT DISTINCT ON (login_id)
+        id AS retail_id,
+        login_id AS company_id,
+        company_details
+      FROM retail
+      WHERE login_id IS NOT NULL
+      ORDER BY login_id ASC
+    `);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "No retail companies found" });
+    }
+
+    // Return retail_id, company_id, company_details (so company_name can be extracted)
+    res.status(200).json(
+      result.rows.map((row) => ({
+        retail_id: row.retail_id,
+        company_id: row.company_id,
+        company_name: row.company_details?.company_name || null,
+      })),
+    );
+  } catch (err: any) {
+    console.error("Error fetching retail company list:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ✅ GET All Retails (filtered by company_id if provided)
+export const getAllRetails = async (req: Request, res: Response) => {
+  const { company_id } = req.query;
+
+  try {
+    let query = `SELECT * FROM retail`;
+    const values: any[] = [];
+    const conditions: string[] = [];
+
+    // Filter by company_id if provided
+    if (company_id) {
+      values.push(company_id);
+      conditions.push(`(company_details->>'id')::int = $${values.length}`);
+    }
+
+    // Add WHERE clause if needed
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    // Debug logs
+    console.log("FINAL QUERY:", query);
+    console.log("VALUES:", values);
+
+    const result = await pool.query(query, values);
+    res.status(200).json({ retails: result.rows });
+  } catch (err: any) {
+    console.error("Error fetching retails:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+

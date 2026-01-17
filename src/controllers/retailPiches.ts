@@ -3,7 +3,6 @@ import pool from "../config/db";
 
 export const createRetailPitch = async (req: Request, res: Response) => {
   try {
-
     const {
       retail_id,
       login_id,
@@ -27,44 +26,30 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       }
     };
 
-    // -------------------------------
-    // Parse JSON Fields
-    // -------------------------------
     const parsedRetailDetails = safeParse(retail_details);
     const parsedRetailCompliance = safeParse(retail_compliance);
 
     // -------------------------------
     // Validate Required Fields
     // -------------------------------
-    if (!retail_id) {
-      return res.status(400).json({ error: "retail_id is required" });
-    }
+    if (!retail_id) return res.status(400).json({ error: "retail_id is required" });
+    if (!login_id) return res.status(400).json({ error: "login_id is required" });
+    if (!retail_type) return res.status(400).json({ error: "retail_type is required" });
 
-    if (!login_id) {
-      return res.status(400).json({ error: "login_id is required" });
-    }
-
-    if (!retail_type) {
-      return res.status(400).json({ error: "retail_type is required" });
-    }
-
-    // Convert retail_type to string safely
     const safeRetailType =
-      typeof retail_type === "object"
-        ? JSON.stringify(retail_type)
-        : retail_type.toString();
+      typeof retail_type === "object" ? JSON.stringify(retail_type) : retail_type.toString();
 
     // -------------------------------
-    // Duplicate retail_id Check
+    // Duplicate check for login_id + retail_id
     // -------------------------------
     const existing = await pool.query(
-      `SELECT id FROM retail_pitches WHERE retail_id = $1`,
-      [retail_id]
+      `SELECT id FROM retail_pitches WHERE retail_id = $1 AND login_id = $2`,
+      [retail_id, login_id]
     );
 
     if (existing.rows.length > 0) {
       return res.status(400).json({
-        error: "Retail pitch with this retail_id already exists",
+        error: "A pitch for this retail_id and login_id already exists",
       });
     }
 
@@ -90,7 +75,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       : null;
 
     // -------------------------------
-    // Save to Database
+    // Insert into database
     // -------------------------------
     const result = await pool.query(
       `INSERT INTO retail_pitches (
@@ -115,6 +100,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
         retail_id,
       ]
     );
+
     return res.status(201).json(result.rows[0]);
   } catch (err: any) {
     console.error("❌ Error creating retail pitch:", err);
@@ -123,11 +109,13 @@ export const createRetailPitch = async (req: Request, res: Response) => {
 };
 
 
+
 /**
  * ✅ GET All Retail Pitches (optionally by login_id)
  */
 export const getAllRetailPitches = async (req: Request, res: Response) => {
   const { login_id } = req.query;
+  console.log("==============================================", login_id)
   try {
     let query = `SELECT * FROM retail_pitches`;
     const values: any[] = [];

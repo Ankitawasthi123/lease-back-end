@@ -32,6 +32,7 @@ import {
   getRetailById,
   updateRetail,
   deleteRetail,
+  getRetailCompanyList,
 } from "../controllers/retail";
 import {
   createPitch,
@@ -121,6 +122,7 @@ router.post("/retail/create-retail", protect, createRetail);
 router.get("/retail/retail-list", protect, getAllRetails);
 router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
 router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
+router.get("/retail/retail-company-list", protect, getRetailCompanyList);
 router.put("/retail/update", protect, updateRetail);
 router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
@@ -141,6 +143,11 @@ router.get(
   "/retail-pitch/pitch-details/:login_id/:retail_id",
   protect,
   getRetailPitchByLoginAndRetailId,
+);
+router.get(
+  "/retail-pitch/retail-pitch-list/:login_id",
+  protect,
+  getRetailPitchesForUser,
 );
 router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
 
