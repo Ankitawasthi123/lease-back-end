@@ -38,6 +38,8 @@ import {
   getPitchById,
   getPitchByLoginAndWarehouseId,
   updatePitch,
+  getPitchesForUser,
+  getWarehouseRequirementCompanyList,
 } from "../controllers/pitches";
 import multer from "multer";
 import path from "path";
@@ -124,6 +126,8 @@ router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
 router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
 router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
+router.put("/pitch/pitch-list", protect, cpUpload, getPitchesForUser);
+router.put("/pitch/pitch-comany-list", protect, cpUpload, getWarehouseRequirementCompanyList);
 router.get(
   "/pitch/pitch-details/:login_id/:warehouse_id",
   protect,
