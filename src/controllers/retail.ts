@@ -235,29 +235,32 @@ export const getRetailCompanyList = async (req: Request, res: Response) => {
   }
 };
 
-// ✅ GET All Retails (filtered by company_id if provided)
+// ✅ GET All Retails
 export const getAllRetails = async (req: Request, res: Response) => {
-  const { company_id } = req.query;
+  const { login_id, company_id } = req.query;
+
+  if (!login_id || isNaN(Number(login_id))) {
+    return res.status(400).json({ message: "login_id is required" });
+  }
 
   try {
     let query = `SELECT * FROM retail`;
     const values: any[] = [];
     const conditions: string[] = [];
 
-    // Filter by company_id if provided
-    if (company_id) {
-      values.push(company_id);
+    if (company_id && !isNaN(Number(company_id))) {
+      // ✅ Case 1: company_id provided
+      values.push(Number(company_id));
       conditions.push(`(company_details->>'id')::int = $${values.length}`);
+    } else {
+      // ✅ Case 2: company_id undefined → filter by login_id
+      values.push(Number(login_id));
+      conditions.push(`login_id = $${values.length}`);
     }
 
-    // Add WHERE clause if needed
-    if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(" AND ");
-    }
-
+    query += ` WHERE ` + conditions.join(" AND ");
     query += ` ORDER BY id DESC`;
 
-    // Debug logs
     console.log("FINAL QUERY:", query);
     console.log("VALUES:", values);
 
@@ -268,4 +271,3 @@ export const getAllRetails = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-

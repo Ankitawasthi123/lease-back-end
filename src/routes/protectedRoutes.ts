@@ -10,6 +10,7 @@ import {
   getCompanyRequirementsList,
   getCompanyList,
   getRequirementDetails,
+  getLocationListLocationsByUser,
 } from "../controllers/companyRequirementsController";
 import {
   createBid,
@@ -24,6 +25,7 @@ import {
   updateWarehouse,
   deleteWarehouse,
   getWarehouseCompanyList,
+  getWarehousesLocationByUser,
 } from "../controllers/warehouse";
 import {
   createRetail,
@@ -52,6 +54,7 @@ import {
   getRetailPitchById,
   getRetailPitchByLoginAndRetailId,
   updateRetailPitch,
+  getRetailPitchCompanyList,
 } from "../controllers/retailPiches";
 
 const storage = multer.diskStorage({
@@ -95,10 +98,17 @@ router.post(
 );
 router.get("/company/company-list", protect, getCompanyList);
 router.post("/company/requirment-details", protect, getRequirementDetails);
-router.post("/bids/add-bid", protect, createBid);
+router.get(
+  "/company/user-location-list/:login_id",
+  protect,
+  getLocationListLocationsByUser,
+);
 
+
+router.post("/bids/add-bid", protect, createBid);
 router.post("/bids/get-bid-byid", protect, getBidsForUserAndCompany);
 router.post("/bids/bid-company-list", protect, getBidsCompanyList);
+
 
 router.post("/warehouse/create-warehouse", protect, createWarehouse);
 router.get("/warehouse/warehouse-list", protect, getAllWarehouses);
@@ -108,18 +118,25 @@ router.get(
   protect,
   getWarehouseById,
 );
-
 router.get(
   "/warehouse/warehouse-company", // ✅ Add leading slash
   protect,
   getWarehouseCompanyList,
 );
-
 router.put("/warehouse/update", protect, updateWarehouse);
 router.delete("/warehouse/delete", protect, deleteWarehouse);
+router.get(
+  "/warehouse/warehouse-user-locations/:login_id", // ✅ Add leading slash
+  protect,
+  getWarehousesLocationByUser,
+);
 
 router.post("/retail/create-retail", protect, createRetail);
-router.get("/retail/retail-list", protect, getAllRetails);
+router.get(
+  "/retail/retail-list",
+  protect,
+  getAllRetails
+);
 router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
 router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
 router.get("/retail/retail-company-list", protect, getRetailCompanyList);
@@ -129,7 +146,12 @@ router.delete("/retail/:retail_id/:login_id", deleteRetail);
 router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
 router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
 router.put("/pitch/pitch-list", protect, cpUpload, getPitchesForUser);
-router.put("/pitch/pitch-comany-list", protect, cpUpload, getWarehouseRequirementCompanyList);
+router.put(
+  "/pitch/pitch-comany-list",
+  protect,
+  cpUpload,
+  getWarehouseRequirementCompanyList,
+);
 router.get(
   "/pitch/pitch-details/:login_id/:warehouse_id",
   protect,
@@ -144,8 +166,14 @@ router.get(
   protect,
   getRetailPitchByLoginAndRetailId,
 );
+router.post(
+  "/retail-pitch/reatail-pitch-company-list",
+  protect,
+  cpUpload,
+  getRetailPitchCompanyList,
+);
 router.get(
-  "/retail-pitch/retail-pitch-list/:login_id",
+  "/retail-pitch/retail-pitch-list",
   protect,
   getRetailPitchesForUser,
 );

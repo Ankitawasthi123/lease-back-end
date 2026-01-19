@@ -32,19 +32,24 @@ export const createRetailPitch = async (req: Request, res: Response) => {
     // -------------------------------
     // Validate Required Fields
     // -------------------------------
-    if (!retail_id) return res.status(400).json({ error: "retail_id is required" });
-    if (!login_id) return res.status(400).json({ error: "login_id is required" });
-    if (!retail_type) return res.status(400).json({ error: "retail_type is required" });
+    if (!retail_id)
+      return res.status(400).json({ error: "retail_id is required" });
+    if (!login_id)
+      return res.status(400).json({ error: "login_id is required" });
+    if (!retail_type)
+      return res.status(400).json({ error: "retail_type is required" });
 
     const safeRetailType =
-      typeof retail_type === "object" ? JSON.stringify(retail_type) : retail_type.toString();
+      typeof retail_type === "object"
+        ? JSON.stringify(retail_type)
+        : retail_type.toString();
 
     // -------------------------------
     // Duplicate check for login_id + retail_id
     // -------------------------------
     const existing = await pool.query(
       `SELECT id FROM retail_pitches WHERE retail_id = $1 AND login_id = $2`,
-      [retail_id, login_id]
+      [retail_id, login_id],
     );
 
     if (existing.rows.length > 0) {
@@ -98,7 +103,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         retail_id,
-      ]
+      ],
     );
 
     return res.status(201).json(result.rows[0]);
@@ -108,14 +113,11 @@ export const createRetailPitch = async (req: Request, res: Response) => {
   }
 };
 
-
-
 /**
  * ✅ GET All Retail Pitches (optionally by login_id)
  */
 export const getAllRetailPitches = async (req: Request, res: Response) => {
   const { login_id } = req.query;
-  console.log("==============================================", login_id)
   try {
     let query = `SELECT * FROM retail_pitches`;
     const values: any[] = [];
@@ -136,48 +138,12 @@ export const getAllRetailPitches = async (req: Request, res: Response) => {
 };
 
 /**
- * ✅ GET Retail Pitches for a Specific User
- */
-export const getRetailPitchesForUser = async (req: Request, res: Response) => {
-  const { login_id } = req.params;
-  try {
-    const result = await pool.query(
-      `SELECT * FROM retail_pitches WHERE login_id = $1 ORDER BY id DESC`,
-      [login_id]
-    );
-    res.status(200).json({ retail_pitches: result.rows });
-  } catch (err: any) {
-    console.error(`Error fetching retail pitches for user ${login_id}:`, err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-/**
- * ✅ GET Retail Pitch by ID
- */
-export const getRetailPitchById = async (req: Request, res: Response) => {
-  const { pitch_id } = req.params;
-  try {
-    const result = await pool.query(
-      `SELECT * FROM retail_pitches WHERE id = $1 LIMIT 1`,
-      [pitch_id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Retail pitch not found" });
-    }
-
-    res.status(200).json(result.rows[0]);
-  } catch (err: any) {
-    console.error("Error fetching retail pitch by ID:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-/**
  * ✅ GET Retail Pitch by Login ID and Retail ID
  */
-export const getRetailPitchByLoginAndRetailId = async (req: Request, res: Response) => {
+export const getRetailPitchByLoginAndRetailId = async (
+  req: Request,
+  res: Response,
+) => {
   const { login_id, retail_id } = req.params;
 
   try {
@@ -185,7 +151,7 @@ export const getRetailPitchByLoginAndRetailId = async (req: Request, res: Respon
       `SELECT * FROM retail_pitches
        WHERE login_id = $1 AND retail_id = $2
        LIMIT 1`,
-      [login_id, retail_id]
+      [login_id, retail_id],
     );
 
     if (result.rows.length === 0) {
@@ -220,7 +186,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     // Fetch existing pitch
     const existing = await pool.query(
       `SELECT * FROM retail_pitches WHERE login_id = $1 AND id = $2`,
-      [login_id, id]
+      [login_id, id],
     );
 
     if (existing.rows.length === 0) {
@@ -242,7 +208,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
         mimetype: file.mimetype,
         size: file.size,
         url: `/uploads/images/${file.filename}`,
-      })
+      }),
     );
 
     // Keep all old images + add new ones
@@ -282,7 +248,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
         JSON.stringify(finalPdf),
         login_id,
         id,
-      ]
+      ],
     );
 
     return res.status(200).json(updated.rows[0]);
@@ -291,5 +257,130 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+/**
+ * ✅ GET Retail Pitch by ID
+ */
+export const getRetailPitchById = async (req: Request, res: Response) => {
+  const { pitch_id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM retail_pitches WHERE id = $1 LIMIT 1`,
+      [pitch_id],
+    );
 
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Retail pitch not found" });
+    }
+
+    res.status(200).json(result.rows[0]);
+  } catch (err: any) {
+    console.error("Error fetching retail pitch by ID:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ✅ GET Retail Pitches with Company Details
+export const getRetailPitchCompanyList = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { login_id } = req.body;
+
+    // Validate login_id
+    if (!login_id || isNaN(Number(login_id))) {
+      return res
+        .status(400)
+        .json({ message: "login_id must be a valid number" });
+    }
+
+    const loginIdNum = Number(login_id);
+
+    // Fetch retail pitches joined with retail company details
+    const result = await pool.query(
+      `
+      SELECT 
+        rp.id AS pitch_id,
+        rp.retail_id,
+        rp.login_id,
+        r.company_details
+      FROM retail_pitches rp
+      LEFT JOIN retail r
+        ON rp.retail_id = r.id
+      WHERE rp.login_id = $1
+      ORDER BY rp.id DESC
+      `,
+      [loginIdNum],
+    );
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No retail pitches found for this user" });
+    }
+
+    // Map to include company data with each pitch
+    const formattedRows = result.rows.map((row: any) => {
+      const company = row.company_details || {};
+      return {
+        pitch_id: row.pitch_id,
+        retail_id: row.retail_id,
+        login_id: row.login_id,
+        company_id: company.id || null,
+        company_name: company.company_name || null,
+      };
+    });
+
+    res.status(200).json(formattedRows);
+  } catch (err) {
+    console.error("Error fetching retail pitch company list:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+/**
+ * ✅ GET Retail Pitch by ID
+ */
+export const getRetailPitchesForUser = async (req: Request, res: Response) => {
+  const { login_id, company_id } = req.query;
+
+  if (!login_id || isNaN(Number(login_id))) {
+    return res.status(400).json({ message: "login_id must be a valid number" });
+  }
+
+  if (!company_id || isNaN(Number(company_id))) {
+    return res
+      .status(400)
+      .json({ message: "company_id must be a valid number" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        rp.id AS pitch_id,
+        rp.retail_id,
+        rp.login_id,
+        rp.retail_details,
+        rp.retail_compliance,
+        rp.created_date,
+        r.company_details,
+        rp.retail_type,
+        rp.status
+      FROM retail_pitches rp
+      INNER JOIN retail r
+        ON rp.retail_id = r.id
+      WHERE rp.login_id = $1
+        AND (r.company_details->>'id')::int = $2
+      ORDER BY rp.id DESC
+      `,
+      [Number(login_id), Number(company_id)]
+    );
+
+    res.status(200).json(result.rows);
+  } catch (err: any) {
+    console.error("Error fetching retail pitches:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
 

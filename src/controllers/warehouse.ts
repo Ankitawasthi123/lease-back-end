@@ -54,30 +54,63 @@ export const createWarehouse = async (
 };
 
 export const getAllWarehouses = async (
-  req: Request<{}, {}, {}, { login_id?: string }>,
+  req: Request<
+    {},
+    {},
+    {},
+    { login_id?: string; location?: string }
+  >,
   res: Response<{ warehouses: WarehouseResponse[] }>
 ) => {
-  const { login_id } = req.query;
+  const { login_id, location } = req.query;
+
   try {
     let query = `SELECT * FROM warehouse`;
-    let values: any[] = [];
+    const values: any[] = [];
+    const conditions: string[] = [];
 
+    /**
+     * 🔹 Filter by current user (login_id)
+     */
     if (login_id) {
-      // Return only warehouses belonging to this login_id
-      query += ` WHERE login_id = $1`;
+      conditions.push(`login_id = $${values.length + 1}`);
       values.push(login_id);
     }
-    // Else: no WHERE clause → returns all warehouses
+
+    /**
+     * 🔹 Filter by location (only if provided)
+     * Uses JSONB warehouse_location ->> display_name
+     */
+    if (location) {
+      conditions.push(
+        `warehouse_location->>'display_name' = $${values.length + 1}`
+      );
+      values.push(location);
+    }
+
+    /**
+     * 🔹 Apply conditions if any
+     */
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
 
     query += ` ORDER BY id DESC`;
 
     const result = await pool.query(query, values);
-    res.status(200).json({ warehouses: result.rows });
+
+    return res.status(200).json({
+      warehouses: result.rows,
+    });
   } catch (err: any) {
     console.error("Error fetching warehouses:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({
+      error: "Internal Server Error",
+      details: err.message,
+    });
   }
 };
+
 
 export const getWarehousesCurrUser = async (
   req: Request<{ login_id: string }>,
@@ -271,5 +304,57 @@ export const getWarehouseCompanyList = async (req, res) => {
   } catch (err) {
     console.error("Error fetching warehouse company list:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+export const getWarehousesLocationByUser = async (
+  req: Request,
+  res: Response
+) => {
+  const { login_id } = req.params;
+
+  if (!login_id || isNaN(Number(login_id))) {
+    return res
+      .status(400)
+      .json({ error: "'login_id' is required and must be numeric" });
+  }
+
+  const companyId = Number(login_id);
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT DISTINCT ON (warehouse_location->>'display_name')
+        warehouse_location->>'display_name' AS display_name,
+        warehouse_location
+      FROM warehouse
+      WHERE login_id = $1
+        AND warehouse_location IS NOT NULL
+      ORDER BY warehouse_location->>'display_name'
+      `,
+      [companyId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "No warehouse locations found for this company",
+      });
+    }
+
+    const locations = result.rows.map((row) => ({
+      display_name: row.display_name,
+      ...row.warehouse_location,
+    }));
+
+    return res.status(200).json({
+      company_id: companyId,
+      locations,
+    });
+  } catch (err: any) {
+    console.error("Error fetching warehouse locations:", err);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: err.message,
+    });
   }
 };
