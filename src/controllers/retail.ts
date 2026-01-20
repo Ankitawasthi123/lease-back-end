@@ -235,12 +235,14 @@ export const getRetailCompanyList = async (req: Request, res: Response) => {
   }
 };
 
-// ✅ GET All Retails
-export const getAllRetails = async (req: Request, res: Response) => {
-  const { login_id, company_id } = req.query;
+export const getAllRetailsByLocation = async (req: Request, res: Response) => {
+  const { login_id, location } = req.query;
 
+  // Validate login_id
   if (!login_id || isNaN(Number(login_id))) {
-    return res.status(400).json({ message: "login_id is required" });
+    return res.status(400).json({
+      message: "login_id is required and must be a number",
+    });
   }
 
   try {
@@ -248,26 +250,108 @@ export const getAllRetails = async (req: Request, res: Response) => {
     const values: any[] = [];
     const conditions: string[] = [];
 
-    if (company_id && !isNaN(Number(company_id))) {
-      // ✅ Case 1: company_id provided
-      values.push(Number(company_id));
-      conditions.push(`(company_details->>'id')::int = $${values.length}`);
-    } else {
-      // ✅ Case 2: company_id undefined → filter by login_id
-      values.push(Number(login_id));
-      conditions.push(`login_id = $${values.length}`);
+    // Always filter by login_id
+    values.push(Number(login_id));
+    conditions.push(`login_id = $${values.length}`);
+
+    // Apply location filter ONLY if not "all"
+    if (location && location !== "all") {
+      values.push(`%${location}%`);
+      conditions.push(
+        `retail_details->'retail_location'->>'display_name' ILIKE $${values.length}`
+      );
     }
 
-    query += ` WHERE ` + conditions.join(" AND ");
+    query += ` WHERE ${conditions.join(" AND ")}`;
     query += ` ORDER BY id DESC`;
 
-    console.log("FINAL QUERY:", query);
-    console.log("VALUES:", values);
+    console.log("FINAL QUERY:", query, values);
 
     const result = await pool.query(query, values);
-    res.status(200).json({ retails: result.rows });
+
+    res.status(200).json({
+      retails: result.rows,
+    });
+
   } catch (err: any) {
     console.error("Error fetching retails:", err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+export const getAllRetailsByCompany = async (req: Request, res: Response) => {
+  const { company_id } = req.query;
+
+  try {
+    let query = `SELECT * FROM retail`;
+    const values: any[] = [];
+    const conditions: string[] = [];
+
+    // Filter by company_id ONLY if it's defined and NOT "all"
+    if (company_id && company_id !== "all" && !isNaN(Number(company_id))) {
+      values.push(Number(company_id));
+      conditions.push(`(company_details->>'id')::int = $${values.length}`);
+    }
+
+    // Add WHERE only if we have conditions
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    console.log("FINAL QUERY:", query, values);
+
+    const result = await pool.query(query, values);
+
+    res.status(200).json({
+      retails: result.rows,
+    });
+
+  } catch (err: any) {
+    console.error("Error fetching retails by company:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getUserRetailsLocation = async (req: Request, res: Response) => {
+  const { login_id } = req.query;
+
+  if (!login_id || isNaN(Number(login_id))) {
+    return res
+      .status(400)
+      .json({ error: "loginId is required and must be numeric" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT DISTINCT ON (retail_details->'retail_location'->>'display_name')
+        retail_details->'retail_location'->>'display_name' AS display_name,
+        retail_details->'retail_location' AS retail_location
+      FROM retail
+      WHERE login_id = $1
+        AND retail_details ? 'retail_location'
+        AND retail_details->'retail_location' IS NOT NULL
+      ORDER BY retail_details->'retail_location'->>'display_name'
+      `,
+      [Number(login_id)],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "No retail locations found" });
+    }
+
+    // Clean array of unique retail_location objects
+    const locations = result.rows.map(
+      (row) => row.retail_location?.display_name,
+    );
+
+    return res.status(200).json({ locations });
+  } catch (err: any) {
+    console.error("Error fetching retail locations:", err);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: err.message });
   }
 };

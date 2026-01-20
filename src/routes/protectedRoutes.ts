@@ -29,12 +29,14 @@ import {
 } from "../controllers/warehouse";
 import {
   createRetail,
-  getAllRetails,
+  getAllRetailsByLocation,
+  getAllRetailsByCompany,
   getRetailsCurrUser,
   getRetailById,
   updateRetail,
   deleteRetail,
   getRetailCompanyList,
+  getUserRetailsLocation,
 } from "../controllers/retail";
 import {
   createPitch,
@@ -133,13 +135,19 @@ router.get(
 
 router.post("/retail/create-retail", protect, createRetail);
 router.get(
-  "/retail/retail-list",
+  "/retail/retail-list-location",
   protect,
-  getAllRetails
+  getAllRetailsByLocation
+);
+router.get(
+  "/retail/retail-list-company",
+  protect,
+  getAllRetailsByCompany
 );
 router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
 router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
 router.get("/retail/retail-company-list", protect, getRetailCompanyList);
+router.get("/retail/retail-user-location", protect, getUserRetailsLocation);
 router.put("/retail/update", protect, updateRetail);
 router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
