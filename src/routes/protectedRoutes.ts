@@ -19,7 +19,8 @@ import {
 } from "../controllers/bidsController";
 import {
   createWarehouse,
-  getAllWarehouses,
+  getAllWarehousesList,
+  getAllWarehousesThreePlList,
   getWarehousesCurrUser,
   getWarehouseById,
   updateWarehouse,
@@ -113,7 +114,8 @@ router.post("/bids/bid-company-list", protect, getBidsCompanyList);
 
 
 router.post("/warehouse/create-warehouse", protect, createWarehouse);
-router.get("/warehouse/warehouse-list", protect, getAllWarehouses);
+router.get("/warehouse/warehouse-list", protect, getAllWarehousesList);
+router.get("/warehouse/warehouse-threepl-list", protect, getAllWarehousesThreePlList);
 router.get("/warehouse/warehouse-user-list", protect, getWarehousesCurrUser);
 router.get(
   "/warehouse/warehouse-details/:login_id/:id",
@@ -121,9 +123,9 @@ router.get(
   getWarehouseById,
 );
 router.get(
-  "/warehouse/warehouse-company", // ✅ Add leading slash
-  protect,
-  getWarehouseCompanyList,
+  "/warehouse/warehouse-company", 
+  protect, 
+  getWarehouseCompanyList, 
 );
 router.put("/warehouse/update", protect, updateWarehouse);
 router.delete("/warehouse/delete", protect, deleteWarehouse);

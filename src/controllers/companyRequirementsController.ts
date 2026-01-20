@@ -61,7 +61,7 @@ export const createRequirement = async (req, res) => {
         JSON.stringify(bid_details || {}),
         JSON.stringify(distance || []),
         status || "submitted",
-      ]
+      ],
     );
 
     res.status(201).json(result.rows[0]);
@@ -122,7 +122,7 @@ export const updateCompanyRequirements = async (req, res) => {
         JSON.stringify(distance || []),
         id,
         company_id,
-      ]
+      ],
     );
 
     if (result.rows.length === 0) {
@@ -153,7 +153,7 @@ export const getCurrRequirment = async (req, res) => {
 
     const result = await pool.query(
       "SELECT * FROM company_requirements WHERE id = $1",
-      [companyIdParsed]
+      [companyIdParsed],
     );
 
     if (result.rows.length === 0) {
@@ -206,7 +206,9 @@ export const getCompanyRequirementsList = async (req, res) => {
 
     if (location) {
       // Add location filter using JSONB ->> display_name
-      conditions.push(`warehouse_location->>'display_name' = $${values.length + 1}`);
+      conditions.push(
+        `warehouse_location->>'display_name' = $${values.length + 1}`,
+      );
       values.push(location);
     }
 
@@ -226,9 +228,18 @@ export const getCompanyRequirementsList = async (req, res) => {
 
     const bidsResult = await pool.query(
       "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
-      [requirementIds]
+      [requirementIds],
     );
-    const bids = bidsResult.rows;
+
+    let bids;
+
+    if (location === undefined) {
+      bids = bidsResult.rows.filter((item) => {
+        return item?.pl_details.id === login_id;
+      });
+    } else {
+      bids = bidsResult.rows;
+    }
 
     const enrichedRequirements = requirements.map((req) => ({
       ...req,
@@ -242,11 +253,10 @@ export const getCompanyRequirementsList = async (req, res) => {
   }
 };
 
-
 export const getCompanyList = async (req, res, next) => {
   try {
     const result = await pool.query<CompanyRequirement>(
-      "SELECT * FROM company_requirements"
+      "SELECT * FROM company_requirements",
     );
 
     if (result.rows.length === 0) {
@@ -265,9 +275,9 @@ export const getCompanyList = async (req, res, next) => {
             self.findIndex(
               (t) =>
                 t.company_id === value.company_id &&
-                t.company_name === value.company_name
-            )
-        )
+                t.company_name === value.company_name,
+            ),
+        ),
     );
   } catch (err) {
     console.error("Error fetching company data:", err);
@@ -304,13 +314,13 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
       // Just fetch the requirement by ID
       reqRes = await pool.query(
         `SELECT * FROM company_requirements WHERE id = $1`,
-        [requirementId]
+        [requirementId],
       );
     } else {
       // For other roles, also check company_id
       reqRes = await pool.query(
         `SELECT * FROM company_requirements WHERE id = $1 AND company_id = $2`,
-        [requirementId, companyId]
+        [requirementId, companyId],
       );
     }
 
@@ -322,7 +332,7 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
     // 2️⃣ Fetch related bids
     const bidsRes = await pool.query(
       `SELECT * FROM bids WHERE requirement_id = $1`,
-      [requirementId]
+      [requirementId],
     );
     const bids = bidsRes.rows;
 
@@ -356,7 +366,7 @@ export const deleteCompanyRequirements = async (req, res) => {
     // ✅ Step 1: Fetch user and check role
     const userResult = await pool.query(
       "SELECT id, role FROM users WHERE id = $1",
-      [loginIdParsed]
+      [loginIdParsed],
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
@@ -368,7 +378,7 @@ export const deleteCompanyRequirements = async (req, res) => {
     // ✅ Step 2: Fetch requirement
     const requirementResult = await pool.query(
       "SELECT id, status, company_id FROM company_requirements WHERE id = $1",
-      [requirementIdParsed]
+      [requirementIdParsed],
     );
 
     if (requirementResult.rows.length === 0) {
@@ -407,7 +417,10 @@ export const deleteCompanyRequirements = async (req, res) => {
   }
 };
 
-export const getLocationListLocationsByUser = async (req: Request, res: Response) => {
+export const getLocationListLocationsByUser = async (
+  req: Request,
+  res: Response,
+) => {
   const { login_id } = req.params;
 
   if (!login_id || isNaN(Number(login_id))) {
@@ -428,7 +441,7 @@ export const getLocationListLocationsByUser = async (req: Request, res: Response
         AND warehouse_location IS NOT NULL
       ORDER BY display_name
       `,
-      [companyId]
+      [companyId],
     );
 
     if (result.rows.length === 0) {
@@ -438,24 +451,22 @@ export const getLocationListLocationsByUser = async (req: Request, res: Response
     }
 
     // Return only warehouse_location objects in the locations array
-    const locations = result.rows.map((row) => row.warehouse_location?.display_name);
+    const locations = result.rows.map(
+      (row) => row.warehouse_location?.display_name,
+    );
 
     return res.status(200).json({
       company_id: companyId,
-      locations
+      locations,
     });
   } catch (err) {
-    console.error("Error fetching warehouse locations:", err.message, err.stack);
-    return res.status(500).json({ error: "Internal server error", details: err.message });
+    console.error(
+      "Error fetching warehouse locations:",
+      err.message,
+      err.stack,
+    );
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: err.message });
   }
 };
-
-
-
-
-
-
-
-
-
-

@@ -53,7 +53,7 @@ export const createWarehouse = async (
   }
 };
 
-export const getAllWarehouses = async (
+export const getAllWarehousesList = async (
   req: Request<
     {},
     {},
@@ -280,32 +280,7 @@ export const deleteWarehouse = async (
   }
 };
 
-export const getWarehouseCompanyList = async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT DISTINCT
-        login_id,
-        company_details
-      FROM warehouse
-      WHERE login_id IS NOT NULL
-      ORDER BY company_details ASC
-    `);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "No warehouse companies found" });
-    }
-
-    res.status(200).json(
-      result.rows.map((row) => ({
-        login_id: row.login_id,
-        company_details: row.company_details,
-      }))
-    );
-  } catch (err) {
-    console.error("Error fetching warehouse company list:", err);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-};
 
 export const getWarehousesLocationByUser = async (
   req: Request,
@@ -358,3 +333,173 @@ export const getWarehousesLocationByUser = async (
     });
   }
 };
+
+
+export const getAllWarehousesThreePlList = async (
+  req: Request<
+    {},
+    {},
+    {},
+    { login_id?: string; company_id?: string; location?: string }
+  >,
+  res: Response<{ warehouses: WarehouseResponse[] }>
+) => {
+  const { login_id, company_id, location } = req.query;
+
+  // 🔹 FIX: Filter out "null" strings and undefined
+  const cleanLoginId = login_id && login_id !== "null" ? login_id : undefined;
+  const cleanCompanyId = company_id && company_id !== "null" ? company_id : undefined;
+  const cleanLocation = location && location !== "null" ? location : undefined;
+
+  console.log("=============================================", cleanLoginId, cleanCompanyId, cleanLocation )
+  
+  try {
+    let query = `SELECT * FROM warehouse`;
+    const values: any[] = [];
+    const conditions: string[] = [];
+
+    /**
+     * 🔹 Handle company_id (cid) first - return ALL data for this company
+     */
+    if (cleanCompanyId) {
+      conditions.push(`login_id = $${values.length + 1}`);
+      values.push(cleanCompanyId);
+      console.log("🏢 Using company_id filter - returning ALL warehouses for this company");
+    }
+    /**
+     * 🔹 Handle identical login_id == company_id case
+     */
+    else if (cleanLoginId && cleanCompanyId && cleanLoginId === cleanCompanyId) {
+      conditions.push(`login_id = $${values.length + 1}`);
+      values.push(cleanLoginId);
+      console.log("🎯 Using single login_id filter (login_id == company_id)");
+    } else {
+      /**
+       * 🔹 3PL filtering logic (fallback)
+       */
+      if (cleanLoginId) {
+        conditions.push(`
+          login_id = $${values.length + 1} 
+          OR company_details::text NOT ILIKE '%threepl%'
+        `);
+        values.push(cleanLoginId);
+      } else {
+        conditions.push(`company_details::text NOT ILIKE '%threepl%'`);
+      }
+    }
+
+    /**
+     * 🔹 Location filter (if provided)
+     */
+    if (cleanLocation) {
+      conditions.push(
+        `warehouse_location->>'display_name' = $${values.length + 1}`
+      );
+      values.push(cleanLocation);
+    }
+
+    /**
+     * 🔹 Apply conditions
+     */
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    console.log("🔍 Query:", query);
+    console.log("📊 Values:", values);
+
+    const result = await pool.query(query, values);
+
+    return res.status(200).json({
+      warehouses: result.rows,
+    });
+  } catch (err: any) {
+    console.error("Error fetching warehouses:", err);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      details: err.message,
+    });
+  }
+};
+
+export const getWarehouseCompanyList = async (req, res) => {
+  try {
+    const rawLoginId = req.user?.login_id || req.user?.id;
+    const login_id = rawLoginId != null ? String(rawLoginId) : null;
+
+    if (!login_id) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    // Fetch user's company details safely
+    const userCompanyQuery = await pool.query(
+      `SELECT company_details FROM warehouse WHERE login_id::text = $1 LIMIT 1`,
+      [login_id]
+    );
+
+    const rawCompanyDetails = userCompanyQuery.rows[0]?.company_details ?? '';
+    const companyDetailsStr = typeof rawCompanyDetails === 'string'
+      ? rawCompanyDetails
+      : JSON.stringify(rawCompanyDetails); // handle JSON objects
+    const isUser3PLCompany = companyDetailsStr.toLowerCase().includes('threepl');
+
+    // Build main query
+    let query = `
+      SELECT DISTINCT login_id, company_details
+      FROM warehouse
+      WHERE login_id IS NOT NULL
+    `;
+    const queryParams = [];
+
+    if (isUser3PLCompany) {
+      // Include user's own 3PL company + exclude other 3PLs
+      query += ` AND (login_id::text = $1 OR company_details::text NOT ILIKE '%threepl%')`;
+      queryParams.push(login_id);
+    }
+
+    query += ` ORDER BY company_details ASC`;
+
+    const result = await pool.query(query, queryParams);
+    let rows = result.rows;
+
+    // Ensure user's company is included if they are 3PL
+    if (isUser3PLCompany && !rows.some(r => String(r.login_id) === login_id)) {
+      rows.unshift({ login_id, company_details: rawCompanyDetails });
+    }
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "No warehouse companies found" });
+    }
+
+    // Map response — ALWAYS same format with login_id + company_name
+    const data = rows.map(row => {
+      let companyDetailsObj;
+      try {
+        companyDetailsObj = typeof row.company_details === 'string'
+          ? JSON.parse(row.company_details)
+          : row.company_details;
+      } catch {
+        companyDetailsObj = {};
+      }
+
+      return {
+        login_id: row.login_id,
+        company_name: companyDetailsObj.company_name || ''
+      };
+    });
+
+    res.status(200).json(data);
+
+  } catch (err) {
+    console.error("Error fetching warehouse company list:", err);
+    res.status(500).json({ error: "Internal Server Error", details: err.message });
+  }
+};
+
+
+
+
+
+
