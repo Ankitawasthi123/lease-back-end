@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
 
-// ---------- CREATE PITCH ----------
+
 export const createPitch = async (req: Request, res: Response) => {
   try {
     const {
@@ -13,6 +13,7 @@ export const createPitch = async (req: Request, res: Response) => {
       material_details,
       justification,
       rate_details,
+      status, // ✅ Added status
     } = req.body;
 
     const safeParse = (val: any, fallback: any = {}) => {
@@ -60,9 +61,10 @@ export const createPitch = async (req: Request, res: Response) => {
         image_files,
         pdf_files,
         rate_details,
-        created_at,
+        status,
+        created_date,
         updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),NOW())
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())
       RETURNING *`,
       [
         warehouse_location ?? null,
@@ -75,6 +77,7 @@ export const createPitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         rate_details,
+        status ?? "pending", // ✅ Default status
       ]
     );
 

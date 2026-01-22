@@ -12,6 +12,7 @@ export const createRetail = async (req: Request, res: Response) => {
     status,
     company_details,
   } = req.body;
+
   try {
     const result = await pool.query(
       `INSERT INTO retail (
@@ -20,25 +21,35 @@ export const createRetail = async (req: Request, res: Response) => {
         login_id,
         retail_compliance,
         status,
-        company_details
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        company_details,
+        created_date
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        NOW()::text
+      )
       RETURNING *`,
       [
         retail_details,
-        JSON.stringify(retail_type || []), // ✅ ensure JSON text
+        JSON.stringify(retail_type || []),
         login_id,
         JSON.stringify(retail_compliance || {}),
-        status || "pending", // ✅ default value if not provided
+        status || "pending",
         JSON.stringify(company_details || {}),
-      ],
+      ]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
-    console.error(err);
+    console.error("Create Retail Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // ✅ GET Retails for Current User
 export const getRetailsCurrUser = async (req: Request, res: Response) => {
@@ -287,18 +298,19 @@ export const getAllRetailsByCompany = async (req: Request, res: Response) => {
     const values: any[] = [];
     const conditions: string[] = [];
 
-    // Filter by company_id ONLY if it's defined and NOT "all"
+    // 🔹 Filter by company_id ONLY if valid
     if (company_id && company_id !== "all" && !isNaN(Number(company_id))) {
       values.push(Number(company_id));
       conditions.push(`(company_details->>'id')::int = $${values.length}`);
     }
 
-    // Add WHERE only if we have conditions
+    // 🔹 Apply WHERE clause
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(" AND ")}`;
     }
 
-    query += ` ORDER BY id DESC`;
+    // 🔹 Sort by created_date (TEXT → TIMESTAMPTZ)
+    query += ` ORDER BY created_date::timestamptz DESC`;
 
     console.log("FINAL QUERY:", query, values);
 
@@ -307,12 +319,12 @@ export const getAllRetailsByCompany = async (req: Request, res: Response) => {
     res.status(200).json({
       retails: result.rows,
     });
-
   } catch (err: any) {
     console.error("Error fetching retails by company:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 export const getUserRetailsLocation = async (req: Request, res: Response) => {
   const { login_id } = req.query;

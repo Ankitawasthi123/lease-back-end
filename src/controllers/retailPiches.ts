@@ -8,8 +8,9 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       login_id,
       retail_details,
       retail_compliance,
-      retail_type,
+      property_type,
       justification,
+      status, // ✅ receive status
     } = req.body;
 
     // -------------------------------
@@ -18,7 +19,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
     const safeParse = (value: any) => {
       try {
         if (!value || value === "undefined" || value === "null") return {};
-        if (typeof value === "object") return value; // already parsed
+        if (typeof value === "object") return value;
         return JSON.parse(value);
       } catch (err) {
         console.warn("⚠️ JSON parse failed for:", value);
@@ -36,20 +37,20 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "retail_id is required" });
     if (!login_id)
       return res.status(400).json({ error: "login_id is required" });
-    if (!retail_type)
-      return res.status(400).json({ error: "retail_type is required" });
+    if (!property_type)
+      return res.status(400).json({ error: "property_type is required" });
 
-    const safeRetailType =
-      typeof retail_type === "object"
-        ? JSON.stringify(retail_type)
-        : retail_type.toString();
+    const safePropertyType =
+      typeof property_type === "object"
+        ? JSON.stringify(property_type)
+        : property_type.toString();
 
     // -------------------------------
-    // Duplicate check for login_id + retail_id
+    // Duplicate check
     // -------------------------------
     const existing = await pool.query(
       `SELECT id FROM retail_pitches WHERE retail_id = $1 AND login_id = $2`,
-      [retail_id, login_id],
+      [retail_id, login_id]
     );
 
     if (existing.rows.length > 0) {
@@ -80,30 +81,35 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       : null;
 
     // -------------------------------
-    // Insert into database
+    // Insert into database (status + created_date)
     // -------------------------------
     const result = await pool.query(
       `INSERT INTO retail_pitches (
         login_id,
-        retail_type,
+        property_type,
         retail_details,
         retail_compliance,
         justification,
         image_files,
         pdf_files,
-        retail_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        retail_id,
+        status,
+        created_date
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()::text
+      )
       RETURNING *`,
       [
         login_id,
-        safeRetailType,
+        safePropertyType,
         JSON.stringify(parsedRetailDetails),
         JSON.stringify(parsedRetailCompliance),
         justification || "",
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         retail_id,
-      ],
+        status || "submitted", // ✅ default if not sent
+      ]
     );
 
     return res.status(201).json(result.rows[0]);
@@ -173,7 +179,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     const {
       id,
       login_id,
-      retail_type,
+      property_type,
       retail_details,
       retail_compliance,
       justification,
@@ -231,7 +237,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
 
     const updated = await pool.query(
       `UPDATE retail_pitches
-         SET retail_type = $1,
+         SET property_type = $1,
              retail_details = $2,
              retail_compliance = $3,
              justification = $4,
@@ -240,7 +246,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
        WHERE login_id = $7 AND id = $8
        RETURNING *`,
       [
-        retail_type,
+        property_type,
         JSON.stringify(parsedDetails),
         JSON.stringify(parsedCompliance),
         justification || null,
@@ -279,7 +285,6 @@ export const getRetailPitchById = async (req: Request, res: Response) => {
   }
 };
 
-// ✅ GET Retail Pitches with Company Details
 export const getRetailPitchCompanyList = async (
   req: Request,
   res: Response,
@@ -296,10 +301,9 @@ export const getRetailPitchCompanyList = async (
 
     const loginIdNum = Number(login_id);
 
-    // Fetch retail pitches joined with retail company details
     const result = await pool.query(
       `
-      SELECT 
+      SELECT DISTINCT ON ((r.company_details->>'id'))
         rp.id AS pitch_id,
         rp.retail_id,
         rp.login_id,
@@ -308,7 +312,7 @@ export const getRetailPitchCompanyList = async (
       LEFT JOIN retail r
         ON rp.retail_id = r.id
       WHERE rp.login_id = $1
-      ORDER BY rp.id DESC
+      ORDER BY (r.company_details->>'id'), rp.id DESC
       `,
       [loginIdNum],
     );
@@ -319,7 +323,6 @@ export const getRetailPitchCompanyList = async (
         .json({ message: "No retail pitches found for this user" });
     }
 
-    // Map to include company data with each pitch
     const formattedRows = result.rows.map((row: any) => {
       const company = row.company_details || {};
       return {

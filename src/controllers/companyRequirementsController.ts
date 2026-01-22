@@ -11,7 +11,7 @@ interface CompanyRequirement {
   };
 }
 
-// Create a new company entry
+// Create a new company requirement
 export const createRequirement = async (req, res) => {
   const {
     warehouse_location,
@@ -70,6 +70,7 @@ export const createRequirement = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 export const updateCompanyRequirements = async (req, res) => {
   const {
@@ -137,6 +138,7 @@ export const updateCompanyRequirements = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 export const getCurrRequirment = async (req, res) => {
   const { id } = req.body;
 
@@ -172,49 +174,41 @@ export const getCurrRequirment = async (req, res) => {
 export const getCompanyRequirementsList = async (req, res) => {
   const { company_id, login_id, location } = req.body;
 
-  if (!company_id || !login_id) {
-    return res
-      .status(400)
-      .json({ error: "Company ID and login ID are required" });
+  if (!company_id) {
+    return res.status(400).json({ error: "Company ID is required" });
   }
 
   try {
     const companyIdParsed = parseInt(company_id, 10);
-    const loginIdParsed = parseInt(login_id, 10);
 
-    if (isNaN(companyIdParsed) || isNaN(loginIdParsed)) {
-      return res.status(400).json({ error: "Invalid ID format" });
+    if (isNaN(companyIdParsed)) {
+      return res.status(400).json({ error: "Invalid Company ID format" });
     }
-
-    // 🔹 Fetch user
-    const user = await User.findByPk(loginIdParsed);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const isAdmin = user.role === "admin";
 
     // 🔹 Build base query
     let query = "SELECT * FROM company_requirements";
-    const values: any[] = [];
-    const conditions: string[] = [];
+    const values = [];
+    const conditions = [];
 
-    if (!isAdmin) {
-      conditions.push("company_id = $1 AND status = 'approved'");
-      values.push(companyIdParsed);
-    }
+    // Always filter by company
+    conditions.push("company_id = $1");
+    values.push(companyIdParsed);
 
+    // CASE 1: Location present → ALL statuses
     if (location) {
-      // Add location filter using JSONB ->> display_name
       conditions.push(
-        `warehouse_location->>'display_name' = $${values.length + 1}`,
+        `warehouse_location->>'display_name' = $${values.length + 1}`
       );
       values.push(location);
     }
 
-    if (conditions.length > 0) {
-      query += " WHERE " + conditions.join(" AND ");
+    // CASE 2: No location → ONLY approved
+    if (!location) {
+      conditions.push("status = 'approved'");
     }
+
+    query += " WHERE " + conditions.join(" AND ");
+    query += " ORDER BY created_date::timestamp DESC";
 
     const requirementsResult = await pool.query(query, values);
     const requirements = requirementsResult.rows;
@@ -223,21 +217,24 @@ export const getCompanyRequirementsList = async (req, res) => {
       return res.status(200).json([]);
     }
 
-    // 🔹 Attach bids
+    // 🔹 Fetch bids
     const requirementIds = requirements.map((r) => r.id);
 
     const bidsResult = await pool.query(
       "SELECT * FROM bids WHERE requirement_id = ANY($1::int[])",
-      [requirementIds],
+      [requirementIds]
     );
 
     let bids;
 
-    if (location === undefined) {
-      bids = bidsResult.rows.filter((item) => {
-        return item?.pl_details.id === login_id;
-      });
-    } else {
+    // CASE 1: Location present → bids only for login_id
+    if (location && login_id) {
+      bids = bidsResult.rows.filter(
+        (item) => item?.pl_details?.id === login_id
+      );
+    } 
+    // CASE 2: No location → all bids
+    else {
       bids = bidsResult.rows;
     }
 

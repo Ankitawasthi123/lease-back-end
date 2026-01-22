@@ -53,63 +53,7 @@ export const createWarehouse = async (
   }
 };
 
-export const getAllWarehousesList = async (
-  req: Request<
-    {},
-    {},
-    {},
-    { login_id?: string; location?: string }
-  >,
-  res: Response<{ warehouses: WarehouseResponse[] }>
-) => {
-  const { login_id, location } = req.query;
 
-  try {
-    let query = `SELECT * FROM warehouse`;
-    const values: any[] = [];
-    const conditions: string[] = [];
-
-    /**
-     * 🔹 Filter by current user (login_id)
-     */
-    if (login_id) {
-      conditions.push(`login_id = $${values.length + 1}`);
-      values.push(login_id);
-    }
-
-    /**
-     * 🔹 Filter by location (only if provided)
-     * Uses JSONB warehouse_location ->> display_name
-     */
-    if (location) {
-      conditions.push(
-        `warehouse_location->>'display_name' = $${values.length + 1}`
-      );
-      values.push(location);
-    }
-
-    /**
-     * 🔹 Apply conditions if any
-     */
-    if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(" AND ");
-    }
-
-    query += ` ORDER BY id DESC`;
-
-    const result = await pool.query(query, values);
-
-    return res.status(200).json({
-      warehouses: result.rows,
-    });
-  } catch (err: any) {
-    console.error("Error fetching warehouses:", err);
-    return res.status(500).json({
-      error: "Internal Server Error",
-      details: err.message,
-    });
-  }
-};
 
 
 export const getWarehousesCurrUser = async (
@@ -336,78 +280,71 @@ export const getWarehousesLocationByUser = async (
 
 
 export const getAllWarehousesThreePlList = async (
-  req: Request<
-    {},
-    {},
-    {},
-    { login_id?: string; company_id?: string; location?: string }
-  >,
-  res: Response<{ warehouses: WarehouseResponse[] }>
+  req: Request<{}, {}, {}, { login_id?: string; company_id?: string; location?: string }>,
+  res: Response<{ warehouses: any[] }>
 ) => {
   const { login_id, company_id, location } = req.query;
 
-  // 🔹 FIX: Filter out "null" strings and undefined
+  // 🔹 Filter out "null" strings and undefined
   const cleanLoginId = login_id && login_id !== "null" ? login_id : undefined;
   const cleanCompanyId = company_id && company_id !== "null" ? company_id : undefined;
   const cleanLocation = location && location !== "null" ? location : undefined;
 
-  console.log("=============================================", cleanLoginId, cleanCompanyId, cleanLocation )
-  
   try {
     let query = `SELECT * FROM warehouse`;
     const values: any[] = [];
     const conditions: string[] = [];
 
+    // 🔹 Detect if user is 3PL
+    let isUser3PL = false;
+    if (cleanLoginId) {
+      const userRes = await pool.query(
+        `SELECT company_details FROM warehouse WHERE login_id::text = $1 LIMIT 1`,
+        [cleanLoginId]
+      );
+      const userCompany = userRes.rows[0]?.company_details ?? '';
+      const companyStr = typeof userCompany === 'string' ? userCompany : JSON.stringify(userCompany);
+      isUser3PL = companyStr.toLowerCase().includes("threepl");
+    }
+
     /**
-     * 🔹 Handle company_id (cid) first - return ALL data for this company
+     * 🔹 Case 1: user is not 3PL AND company_id is null → return ALL data
      */
-    if (cleanCompanyId) {
+    if (!isUser3PL && !cleanCompanyId) {
+      console.log("👤 Non-3PL user with null company_id → returning ALL warehouses");
+      // Don't push any login_id filter, conditions array can still hold location filter
+    } 
+    /**
+     * 🔹 Existing logic for 3PL or company_id provided
+     */
+    else if (cleanCompanyId) {
       conditions.push(`login_id = $${values.length + 1}`);
       values.push(cleanCompanyId);
       console.log("🏢 Using company_id filter - returning ALL warehouses for this company");
-    }
-    /**
-     * 🔹 Handle identical login_id == company_id case
-     */
-    else if (cleanLoginId && cleanCompanyId && cleanLoginId === cleanCompanyId) {
-      conditions.push(`login_id = $${values.length + 1}`);
+    } else if (cleanLoginId) {
+      conditions.push(`
+        login_id = $${values.length + 1} 
+        OR company_details::text NOT ILIKE '%threepl%'
+      `);
       values.push(cleanLoginId);
-      console.log("🎯 Using single login_id filter (login_id == company_id)");
     } else {
-      /**
-       * 🔹 3PL filtering logic (fallback)
-       */
-      if (cleanLoginId) {
-        conditions.push(`
-          login_id = $${values.length + 1} 
-          OR company_details::text NOT ILIKE '%threepl%'
-        `);
-        values.push(cleanLoginId);
-      } else {
-        conditions.push(`company_details::text NOT ILIKE '%threepl%'`);
-      }
+      conditions.push(`company_details::text NOT ILIKE '%threepl%'`);
     }
 
-    /**
-     * 🔹 Location filter (if provided)
-     */
+    // 🔹 Location filter (always works)
     if (cleanLocation) {
-      conditions.push(
-        `warehouse_location->>'display_name' = $${values.length + 1}`
-      );
+      conditions.push(`warehouse_location->>'display_name' = $${values.length + 1}`);
       values.push(cleanLocation);
     }
 
-    /**
-     * 🔹 Apply conditions
-     */
+    // 🔹 Apply conditions
     if (conditions.length > 0) {
       query += ` WHERE ` + conditions.join(" AND ");
     }
 
     query += ` ORDER BY id DESC`;
 
-    console.log("🔍 Query:", query);
+    console.log("🔍 Final Query:", query);
     console.log("📊 Values:", values);
 
     const result = await pool.query(query, values);
@@ -423,6 +360,7 @@ export const getAllWarehousesThreePlList = async (
     });
   }
 };
+
 
 export const getWarehouseCompanyList = async (req, res) => {
   try {
@@ -445,6 +383,10 @@ export const getWarehouseCompanyList = async (req, res) => {
       : JSON.stringify(rawCompanyDetails); // handle JSON objects
     const isUser3PLCompany = companyDetailsStr.toLowerCase().includes('threepl');
 
+    // Check company_id from request
+    const company_id = req.query.company_id;
+    const hasCompanyId = company_id && company_id !== 'null';
+
     // Build main query
     let query = `
       SELECT DISTINCT login_id, company_details
@@ -453,10 +395,16 @@ export const getWarehouseCompanyList = async (req, res) => {
     `;
     const queryParams = [];
 
+    // Apply filtering logic
     if (isUser3PLCompany) {
-      // Include user's own 3PL company + exclude other 3PLs
       query += ` AND (login_id::text = $1 OR company_details::text NOT ILIKE '%threepl%')`;
       queryParams.push(login_id);
+    } else {
+      // Non-3PL users
+      if (hasCompanyId) {
+        query += ` AND company_details::text NOT ILIKE '%threepl%'`;
+      }
+      // if hasCompanyId is false → return all companies (no filter)
     }
 
     query += ` ORDER BY company_details ASC`;
@@ -495,6 +443,74 @@ export const getWarehouseCompanyList = async (req, res) => {
   } catch (err) {
     console.error("Error fetching warehouse company list:", err);
     res.status(500).json({ error: "Internal Server Error", details: err.message });
+  }
+};
+
+export const getAllWarehousesList = async (
+  req: Request<
+    {},
+    {},
+    {},
+    { login_id?: string; location?: string }
+  >,
+  res: Response<{ warehouses: WarehouseResponse[] }>
+) => {
+  const { login_id, location } = req.query;
+
+  // 🔹 Clean params
+  const cleanLoginId =
+    login_id && login_id !== "null" && login_id !== "undefined"
+      ? login_id
+      : undefined;
+
+  const cleanLocation =
+    location && location !== "null" && location !== "undefined"
+      ? location
+      : undefined;
+
+  try {
+    let query = `SELECT * FROM warehouse`;
+    const values: any[] = [];
+    const conditions: string[] = [];
+
+    /**
+     * 🔹 Always filter by login_id if present
+     */
+    if (cleanLoginId) {
+      conditions.push(`login_id = $${values.length + 1}`);
+      values.push(cleanLoginId);
+    }
+
+    /**
+     * 🔹 Apply location filter ONLY if location exists
+     */
+    if (cleanLocation) {
+      conditions.push(
+        `warehouse_location->>'display_name' = $${values.length + 1}`
+      );
+      values.push(cleanLocation);
+    }
+
+    /**
+     * 🔹 Apply WHERE clause
+     */
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    const result = await pool.query(query, values);
+
+    return res.status(200).json({
+      warehouses: result.rows,
+    });
+  } catch (err: any) {
+    console.error("Error fetching warehouses:", err);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      details: err.message,
+    });
   }
 };
 
