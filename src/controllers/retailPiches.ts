@@ -10,25 +10,26 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       retail_compliance,
       property_type,
       justification,
-      status, // ✅ receive status
+      company_details,
+      status,
     } = req.body;
 
     // -------------------------------
-    // Helper: Safe JSON parse
+    // Safe JSON parse helper
     // -------------------------------
     const safeParse = (value: any) => {
       try {
         if (!value || value === "undefined" || value === "null") return {};
         if (typeof value === "object") return value;
         return JSON.parse(value);
-      } catch (err) {
-        console.warn("⚠️ JSON parse failed for:", value);
+      } catch {
         return {};
       }
     };
 
     const parsedRetailDetails = safeParse(retail_details);
     const parsedRetailCompliance = safeParse(retail_compliance);
+    const parsedCompanyDetails = safeParse(company_details); // ✅ FIXED
 
     // -------------------------------
     // Validate Required Fields
@@ -50,7 +51,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
     // -------------------------------
     const existing = await pool.query(
       `SELECT id FROM retail_pitches WHERE retail_id = $1 AND login_id = $2`,
-      [retail_id, login_id]
+      [retail_id, login_id],
     );
 
     if (existing.rows.length > 0) {
@@ -81,7 +82,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
       : null;
 
     // -------------------------------
-    // Insert into database (status + created_date)
+    // Insert into database
     // -------------------------------
     const result = await pool.query(
       `INSERT INTO retail_pitches (
@@ -94,9 +95,12 @@ export const createRetailPitch = async (req: Request, res: Response) => {
         pdf_files,
         retail_id,
         status,
-        created_date
+        created_date,
+        company_details
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()::text
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        NOW(), $10
       )
       RETURNING *`,
       [
@@ -108,8 +112,9 @@ export const createRetailPitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         retail_id,
-        status || "submitted", // ✅ default if not sent
-      ]
+        status || "submitted",
+        JSON.stringify(parsedCompanyDetails), // ✅ FIXED
+      ],
     );
 
     return res.status(201).json(result.rows[0]);
@@ -118,6 +123,7 @@ export const createRetailPitch = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
 
 /**
  * ✅ GET All Retail Pitches (optionally by login_id)
@@ -183,15 +189,31 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
       retail_details,
       retail_compliance,
       justification,
+      company_details,
     } = req.body;
 
-    // Parse JSON fields
-    const parsedDetails = JSON.parse(retail_details || "{}");
-    const parsedCompliance = JSON.parse(retail_compliance || "{}");
+    // -------------------------------
+    // Safe JSON parse
+    // -------------------------------
+    const safeParse = (value: any) => {
+      try {
+        if (!value || value === "undefined" || value === "null") return {};
+        if (typeof value === "object") return value;
+        return JSON.parse(value);
+      } catch {
+        return {};
+      }
+    };
 
-    // Fetch existing pitch
+    const parsedDetails = safeParse(retail_details);
+    const parsedCompliance = safeParse(retail_compliance);
+    const parsedCompanyDetails = safeParse(company_details);
+
+    // -------------------------------
+    // Authorization check
+    // -------------------------------
     const existing = await pool.query(
-      `SELECT * FROM retail_pitches WHERE login_id = $1 AND id = $2`,
+      `SELECT id FROM retail_pitches WHERE login_id = $1 AND id = $2`,
       [login_id, id],
     );
 
@@ -201,7 +223,9 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
       });
     }
 
-    const existingPitch = existing.rows[0];
+    const existingPitch = (
+      await pool.query(`SELECT * FROM retail_pitches WHERE id = $1`, [id])
+    ).rows[0];
 
     /* --------------------------- IMAGES ----------------------------- */
 
@@ -217,7 +241,6 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
       }),
     );
 
-    // Keep all old images + add new ones
     const finalImages = [...existingImages, ...formattedNewImages];
 
     /* ----------------------------- PDF ------------------------------ */
@@ -242,8 +265,9 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
              retail_compliance = $3,
              justification = $4,
              image_files = $5,
-             pdf_files = $6
-       WHERE login_id = $7 AND id = $8
+             pdf_files = $6,
+             company_details = $7
+       WHERE login_id = $8 AND id = $9
        RETURNING *`,
       [
         property_type,
@@ -252,6 +276,7 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
         justification || null,
         JSON.stringify(finalImages),
         JSON.stringify(finalPdf),
+        JSON.stringify(parsedCompanyDetails),
         login_id,
         id,
       ],
@@ -263,6 +288,8 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+
 /**
  * ✅ GET Retail Pitch by ID
  */
@@ -368,8 +395,8 @@ export const getRetailPitchesForUser = async (req: Request, res: Response) => {
         rp.retail_compliance,
         rp.created_date,
         r.company_details,
-        rp.retail_type,
-        rp.status
+        rp.property_type,
+        rp.status 
       FROM retail_pitches rp
       INNER JOIN retail r
         ON rp.retail_id = r.id
@@ -377,7 +404,7 @@ export const getRetailPitchesForUser = async (req: Request, res: Response) => {
         AND (r.company_details->>'id')::int = $2
       ORDER BY rp.id DESC
       `,
-      [Number(login_id), Number(company_id)]
+      [Number(login_id), Number(company_id)],
     );
 
     res.status(200).json(result.rows);
@@ -386,4 +413,3 @@ export const getRetailPitchesForUser = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-

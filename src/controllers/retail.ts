@@ -40,7 +40,7 @@ export const createRetail = async (req: Request, res: Response) => {
         JSON.stringify(retail_compliance || {}),
         status || "pending",
         JSON.stringify(company_details || {}),
-      ]
+      ],
     );
 
     res.status(201).json(result.rows[0]);
@@ -49,7 +49,6 @@ export const createRetail = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // ✅ GET Retails for Current User
 export const getRetailsCurrUser = async (req: Request, res: Response) => {
@@ -88,10 +87,29 @@ export const getRetailById = async (req: Request, res: Response) => {
       `SELECT * FROM retail_pitches WHERE retail_id = $1`,
       [id],
     );
+
+    // ✅ Step 1: Fetch user and check role
+    const userResult = await pool.query(
+      "SELECT id, role FROM users WHERE id = $1",
+      [login_id],
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
     if (pitchesResult.rows.length > 0) {
+      const filteredPitches =
+        user?.role === "company"
+          ? pitchesResult.rows
+          : pitchesResult.rows.filter(
+              (item) => String(item.login_id) === String(login_id),
+            );
+
       return res.status(200).json({
         ...retail,
-        pitches: retail?.login_id === login_id ? pitchesResult.rows : [],
+        pitches: filteredPitches,
       });
     }
 
@@ -257,11 +275,10 @@ export const getAllRetailsByLocation = async (req: Request, res: Response) => {
   }
 
   try {
-    let query = `SELECT * FROM retail`;
     const values: any[] = [];
     const conditions: string[] = [];
 
-    // Always filter by login_id
+    // Filter by login_id
     values.push(Number(login_id));
     conditions.push(`login_id = $${values.length}`);
 
@@ -269,21 +286,42 @@ export const getAllRetailsByLocation = async (req: Request, res: Response) => {
     if (location && location !== "all") {
       values.push(`%${location}%`);
       conditions.push(
-        `retail_details->'retail_location'->>'display_name' ILIKE $${values.length}`
+        `retail_details->'retail_location'->>'display_name' ILIKE $${values.length}`,
       );
     }
 
-    query += ` WHERE ${conditions.join(" AND ")}`;
+    // Build query
+    let query = `SELECT * FROM retail`;
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
     query += ` ORDER BY id DESC`;
 
     console.log("FINAL QUERY:", query, values);
 
-    const result = await pool.query(query, values);
+    // 1️⃣ Fetch retails
+    const retailResult = await pool.query(query, values);
+    const retails = retailResult.rows;
+
+    // 2️⃣ Fetch all pitches for these retails
+    const retailIds = retails.map((r) => r.id);
+    let pitches: any[] = [];
+    if (retailIds.length > 0) {
+      const placeholders = retailIds.map((_, i) => `$${i + 1}`).join(", ");
+      const pitchQuery = `SELECT * FROM retail_pitches WHERE retail_id IN (${placeholders})`;
+      const pitchResult = await pool.query(pitchQuery, retailIds);
+      pitches = pitchResult.rows;
+    }
+
+    // 3️⃣ Attach pitches to corresponding retail
+    const retailsWithPitches = retails.map((retail) => ({
+      ...retail,
+      pitches: pitches.filter((p) => p.retail_id === retail.id),
+    }));
 
     res.status(200).json({
-      retails: result.rows,
+      retails: retailsWithPitches,
     });
-
   } catch (err: any) {
     console.error("Error fetching retails:", err);
     res.status(500).json({ error: err.message });
@@ -324,7 +362,6 @@ export const getAllRetailsByCompany = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 export const getUserRetailsLocation = async (req: Request, res: Response) => {
   const { login_id } = req.query;
