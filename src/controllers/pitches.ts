@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
 
-
 export const createPitch = async (req: Request, res: Response) => {
   try {
     const {
@@ -14,6 +13,7 @@ export const createPitch = async (req: Request, res: Response) => {
       justification,
       rate_details,
       status, // ✅ Added status
+      pitcher_details,
     } = req.body;
 
     const safeParse = (val: any, fallback: any = {}) => {
@@ -50,22 +50,27 @@ export const createPitch = async (req: Request, res: Response) => {
       : null;
 
     const result = await pool.query(
-      `INSERT INTO pitches (
-        warehouse_location,
-        warehouse_id,
-        login_id,
-        warehouse_size,
-        warehouse_compliance,
-        material_details,
-        justification,
-        image_files,
-        pdf_files,
-        rate_details,
-        status,
-        created_date,
-        updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())
-      RETURNING *`,
+      `
+  INSERT INTO pitches (
+    warehouse_location,
+    warehouse_id,
+    login_id,
+    warehouse_size,
+    warehouse_compliance,
+    material_details,
+    justification,
+    image_files,
+    pdf_files,
+    rate_details,
+    status,
+    pitcher_details,
+    created_date,
+    updated_at
+  ) VALUES (
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()
+  )
+  RETURNING *
+  `,
       [
         warehouse_location ?? null,
         Number(warehouse_id),
@@ -77,8 +82,9 @@ export const createPitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         rate_details,
-        status ?? "pending", // ✅ Default status
-      ]
+        status ?? "pending", // default status
+        pitcher_details,
+      ],
     );
 
     return res.status(201).json({
@@ -124,7 +130,7 @@ export const getPitchById = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT * FROM pitches WHERE id = $1 LIMIT 1`,
-      [pitch_id]
+      [pitch_id],
     );
 
     if (result.rows.length === 0) {
@@ -139,13 +145,16 @@ export const getPitchById = async (req: Request, res: Response) => {
 };
 
 // ---------- GET PITCH BY LOGIN AND WAREHOUSE ID ----------
-export const getPitchByLoginAndWarehouseId = async (req: Request, res: Response) => {
+export const getPitchByLoginAndWarehouseId = async (
+  req: Request,
+  res: Response,
+) => {
   const { login_id, warehouse_id } = req.params;
 
   try {
     const result = await pool.query(
       `SELECT * FROM pitches WHERE login_id = $1 AND warehouse_id = $2 LIMIT 1`,
-      [login_id, warehouse_id]
+      [login_id, warehouse_id],
     );
 
     if (result.rows.length === 0) {
@@ -190,7 +199,7 @@ export const updatePitch = async (req: Request, res: Response) => {
 
     const authCheck = await pool.query(
       `SELECT image_files, pdf_files FROM pitches WHERE id = $1 AND login_id = $2 AND warehouse_id = $3`,
-      [Number(id), Number(login_id), Number(warehouse_id)]
+      [Number(id), Number(login_id), Number(warehouse_id)],
     );
 
     if (authCheck.rowCount === 0) {
@@ -250,7 +259,7 @@ export const updatePitch = async (req: Request, res: Response) => {
         Number(id),
         Number(login_id),
         Number(warehouse_id),
-      ]
+      ],
     );
 
     return res.status(200).json({
@@ -273,7 +282,9 @@ export const getPitchesForUser = async (req: Request, res: Response) => {
     const { login_id, company_id } = req.body;
 
     if (!login_id || isNaN(Number(login_id))) {
-      return res.status(400).json({ message: "login_id must be a valid number" });
+      return res
+        .status(400)
+        .json({ message: "login_id must be a valid number" });
     }
 
     const loginIdNum = Number(login_id);
@@ -289,14 +300,16 @@ export const getPitchesForUser = async (req: Request, res: Response) => {
       LEFT JOIN warehouse w
         ON w.id = p.warehouse_id
       WHERE p.login_id = $1
-      ${companyIdNum ? `AND (w.company_details->>'id')::int = $2` : ''}
+      ${companyIdNum ? `AND (w.company_details->>'id')::int = $2` : ""}
       ORDER BY p.id DESC
       `,
-      companyIdNum ? [loginIdNum, companyIdNum] : [loginIdNum]
+      companyIdNum ? [loginIdNum, companyIdNum] : [loginIdNum],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "No pitches found for this user" });
+      return res
+        .status(404)
+        .json({ message: "No pitches found for this user" });
     }
 
     // Map response to include company_id and company_name for frontend
@@ -316,13 +329,17 @@ export const getPitchesForUser = async (req: Request, res: Response) => {
   }
 };
 
-
-export const getWarehouseRequirementCompanyList = async (req: Request, res: Response) => {
+export const getWarehouseRequirementCompanyList = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { login_id } = req.body;
 
     if (!login_id || isNaN(Number(login_id))) {
-      return res.status(400).json({ message: "login_id must be a valid number" });
+      return res
+        .status(400)
+        .json({ message: "login_id must be a valid number" });
     }
 
     const loginIdNum = Number(login_id);
@@ -339,11 +356,13 @@ export const getWarehouseRequirementCompanyList = async (req: Request, res: Resp
       WHERE p.login_id = $1
       ORDER BY p.warehouse_id, w.company_details->>'company_name' ASC NULLS LAST
       `,
-      [loginIdNum]
+      [loginIdNum],
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "No warehouses found for this user" });
+      return res
+        .status(404)
+        .json({ message: "No warehouses found for this user" });
     }
 
     // Map to only warehouse_id, company_name, and company id
@@ -362,5 +381,3 @@ export const getWarehouseRequirementCompanyList = async (req: Request, res: Resp
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
-
