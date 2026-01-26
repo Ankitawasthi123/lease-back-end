@@ -8,9 +8,11 @@ import {
   deleteCompanyRequirements,
   getCurrRequirment,
   getCompanyRequirementsList,
+  threePlRequirements,
   getCompanyList,
   getRequirementDetails,
   getLocationListLocationsByUser,
+  liveBids,
 } from "../controllers/companyRequirementsController";
 import {
   createBid,
@@ -99,6 +101,13 @@ router.post(
   protect,
   getCompanyRequirementsList,
 );
+router.post(
+  "/company/threepl-requirement-list",
+  protect,
+  threePlRequirements,
+);
+router.get("/company/live-bids/:login_id", protect, liveBids);
+
 router.get("/company/company-list", protect, getCompanyList);
 router.post("/company/requirment-details", protect, getRequirementDetails);
 router.get(
