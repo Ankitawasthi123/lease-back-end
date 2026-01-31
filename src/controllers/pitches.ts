@@ -82,7 +82,7 @@ export const createPitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         rate_details,
-        status ?? "pending", // default status
+        status ?? "submitted", // default status
         pitcher_details,
       ],
     );
@@ -181,6 +181,7 @@ export const updatePitch = async (req: Request, res: Response) => {
       material_details,
       justification,
       rate_details,
+      status, // ✅ added
     } = req.body;
 
     const safeParse = (val: any) => {
@@ -198,8 +199,10 @@ export const updatePitch = async (req: Request, res: Response) => {
     const parsedMaterial = safeParse(material_details) || {};
 
     const authCheck = await pool.query(
-      `SELECT image_files, pdf_files FROM pitches WHERE id = $1 AND login_id = $2 AND warehouse_id = $3`,
-      [Number(id), Number(login_id), Number(warehouse_id)],
+      `SELECT image_files, pdf_files 
+       FROM pitches 
+       WHERE id = $1 AND login_id = $2 AND warehouse_id = $3`,
+      [Number(id), Number(login_id), Number(warehouse_id)]
     );
 
     if (authCheck.rowCount === 0) {
@@ -210,7 +213,6 @@ export const updatePitch = async (req: Request, res: Response) => {
     }
 
     const existingPitch = authCheck.rows[0];
-
     const files: any = req.files || {};
 
     const imageFiles = Array.isArray(files.images) ? files.images : [];
@@ -244,8 +246,9 @@ export const updatePitch = async (req: Request, res: Response) => {
            image_files          = $6,
            pdf_files            = $7,
            rate_details         = $8,
+           status               = COALESCE($9, status), -- ✅ added
            updated_at           = NOW()
-       WHERE id = $9 AND login_id = $10 AND warehouse_id = $11
+       WHERE id = $10 AND login_id = $11 AND warehouse_id = $12
        RETURNING *`,
       [
         JSON.stringify(parsedLocation),
@@ -256,10 +259,11 @@ export const updatePitch = async (req: Request, res: Response) => {
         JSON.stringify(uploadedImages),
         JSON.stringify(pdfMeta),
         rate_details,
+        status ?? 'submitted', // ✅ safe
         Number(id),
         Number(login_id),
         Number(warehouse_id),
-      ],
+      ]
     );
 
     return res.status(200).json({
@@ -275,6 +279,7 @@ export const updatePitch = async (req: Request, res: Response) => {
     });
   }
 };
+
 
 // ---------- GET PITCHES FOR USER WITH COMPANY FILTER ----------
 export const getPitchesForUser = async (req: Request, res: Response) => {
@@ -344,40 +349,77 @@ export const getWarehouseRequirementCompanyList = async (
 
     const loginIdNum = Number(login_id);
 
-    // Get distinct warehouses for this user
     const result = await pool.query(
       `
-      SELECT DISTINCT ON (p.warehouse_id)
-        p.warehouse_id,
-        w.company_details
+      SELECT DISTINCT
+        (w.company_details->>'id')::int     AS company_id,
+        w.company_details->>'company_name' AS company_name
       FROM pitches p
       LEFT JOIN warehouse w
         ON w.id = p.warehouse_id
       WHERE p.login_id = $1
-      ORDER BY p.warehouse_id, w.company_details->>'company_name' ASC NULLS LAST
+        AND w.company_details IS NOT NULL
+      ORDER BY company_name ASC
       `,
-      [loginIdNum],
+      [loginIdNum]
     );
 
     if (result.rows.length === 0) {
       return res
         .status(404)
-        .json({ message: "No warehouses found for this user" });
+        .json({ message: "No companies found for this user" });
     }
 
-    // Map to only warehouse_id, company_name, and company id
-    const formattedRows = result.rows.map((row: any) => {
-      const company = row.company_details || {};
-      return {
-        warehouse_id: row.warehouse_id,
-        company_id: company.id || null,
-        company_name: company.company_name || null,
-      };
-    });
-
-    res.status(200).json(formattedRows);
+    res.status(200).json(result.rows);
   } catch (err) {
     console.error("Error fetching warehouse company list:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
+export const deletePitch = async (req: Request, res: Response) => {
+  try {
+    const {pitch_id, login_id } = req.body; // optional (for ownership check)
+
+
+
+    if (!pitch_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Pitch ID is required",
+      });
+    }
+
+    // ✅ Optional: ensure only owner can delete
+    const result = await pool.query(
+      `
+      DELETE FROM pitches
+      WHERE id = $1
+      AND ($2::int IS NULL OR login_id = $2)
+      RETURNING *
+      `,
+      [Number(pitch_id), login_id ? Number(login_id) : null]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Pitch not found or not authorized to delete",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Pitch deleted successfully",
+      data: result.rows[0],
+    });
+  } catch (err: any) {
+    console.error("❌ Delete pitch error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete pitch",
+      error: err.message,
+    });
   }
 };

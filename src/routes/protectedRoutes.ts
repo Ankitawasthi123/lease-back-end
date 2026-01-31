@@ -18,6 +18,7 @@ import {
   createBid,
   getBidsForUserAndCompany,
   getBidsCompanyList,
+  deleteBid,
 } from "../controllers/bidsController";
 import {
   createWarehouse,
@@ -48,6 +49,7 @@ import {
   updatePitch,
   getPitchesForUser,
   getWarehouseRequirementCompanyList,
+  deletePitch,
 } from "../controllers/pitches";
 import multer from "multer";
 import path from "path";
@@ -120,7 +122,7 @@ router.get(
 router.post("/bids/add-bid", protect, createBid);
 router.post("/bids/get-bid-byid", protect, getBidsForUserAndCompany);
 router.post("/bids/bid-company-list", protect, getBidsCompanyList);
-
+router.delete("/bids/delete-bid/:bid_id", protect, deleteBid);
 
 router.post("/warehouse/create-warehouse", protect, createWarehouse);
 router.get("/warehouse/warehouse-list", protect, getAllWarehousesList);
@@ -165,6 +167,7 @@ router.delete("/retail/:retail_id/:login_id", deleteRetail);
 router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
 router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
 router.put("/pitch/pitch-list", protect, cpUpload, getPitchesForUser);
+router.put("/pitch/delete", protect, cpUpload, deletePitch);
 router.put(
   "/pitch/pitch-comany-list",
   protect,

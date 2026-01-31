@@ -510,22 +510,36 @@ export const getCompanyRequirementsList = async (req, res) => {
       return res.status(400).json({ error: "login_id is required" });
     }
 
-    // Base query
-    let query = `SELECT * FROM company_requirements WHERE company_id = $1`;
+    let query = `
+      SELECT 
+        cr.*,
+        COALESCE(
+          json_agg(b.*) FILTER (WHERE b.id IS NOT NULL),
+          '[]'
+        ) AS bids
+      FROM company_requirements cr
+      LEFT JOIN bids b 
+        ON b.requirement_id = cr.id
+      WHERE cr.company_id = $1
+    `;
+
     const values = [login_id];
 
-    // Add location filter if provided and not 'null'
     if (location && location !== "null") {
-      query += ` AND LOWER(warehouse_location->>'display_name') = LOWER($2)`;
+      query += `
+        AND LOWER(cr.warehouse_location->>'display_name') = LOWER($2)
+      `;
       values.push(location);
     }
 
-    // Optional: order by newest first
-    query += ` ORDER BY created_date DESC`;
+    query += `
+      GROUP BY cr.id
+      ORDER BY cr.created_date DESC
+    `;
 
-    const { rows: requirements } = await pool.query(query, values);
+    const { rows } = await pool.query(query, values);
 
-    return res.status(200).json(requirements);
+    return res.status(200).json(rows);
   } catch (error) {
     console.error("🔥 API ERROR:", error);
     return res.status(500).json({ error: error.message });
