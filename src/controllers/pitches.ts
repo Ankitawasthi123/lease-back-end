@@ -380,9 +380,7 @@ export const getWarehouseRequirementCompanyList = async (
 
 export const deletePitch = async (req: Request, res: Response) => {
   try {
-    const {pitch_id, login_id } = req.body; // optional (for ownership check)
-
-
+    const { pitch_id, login_id } = req.body; // optional ownership check
 
     if (!pitch_id) {
       return res.status(400).json({
@@ -391,28 +389,31 @@ export const deletePitch = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Optional: ensure only owner can delete
+    // ✅ Only allow delete if:
+    // 1. Optional owner check (login_id)
+    // 2. Status is NOT 'approved'
     const result = await pool.query(
       `
       DELETE FROM pitches
       WHERE id = $1
-      AND ($2::int IS NULL OR login_id = $2)
+        AND ($2::int IS NULL OR login_id = $2)
+        AND LOWER(status) != 'approved'
       RETURNING *
       `,
       [Number(pitch_id), login_id ? Number(login_id) : null]
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({
+      return res.status(403).json({
         success: false,
-        message: "Pitch not found or not authorized to delete",
+        message:
+          "Pitch not found, not authorized, or approved pitches cannot be deleted",
       });
     }
 
     return res.status(200).json({
       success: true,
       message: "Pitch deleted successfully",
-      data: result.rows[0],
     });
   } catch (err: any) {
     console.error("❌ Delete pitch error:", err);
@@ -423,3 +424,4 @@ export const deletePitch = async (req: Request, res: Response) => {
     });
   }
 };
+

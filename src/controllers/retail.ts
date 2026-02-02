@@ -243,6 +243,7 @@ export const getRetailCompanyList = async (req: Request, res: Response) => {
         company_details
       FROM retail
       WHERE login_id IS NOT NULL
+        AND status = 'approved'   -- ✅ Only approved
       ORDER BY login_id ASC
     `);
 
@@ -250,19 +251,33 @@ export const getRetailCompanyList = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "No retail companies found" });
     }
 
-    // Return retail_id, company_id, company_details (so company_name can be extracted)
-    res.status(200).json(
-      result.rows.map((row) => ({
+    // Return retail_id, company_id, company_name (from JSON)
+    const data = result.rows.map((row) => {
+      let companyName = null;
+
+      try {
+        const details =
+          typeof row.company_details === "string"
+            ? JSON.parse(row.company_details)
+            : row.company_details;
+
+        companyName = details?.company_name || null;
+      } catch {}
+
+      return {
         retail_id: row.retail_id,
         company_id: row.company_id,
-        company_name: row.company_details?.company_name || null,
-      })),
-    );
+        company_name: companyName,
+      };
+    });
+
+    res.status(200).json(data);
   } catch (err: any) {
     console.error("Error fetching retail company list:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 export const getAllRetailsByLocation = async (req: Request, res: Response) => {
   const { login_id, location } = req.query;
@@ -336,9 +351,13 @@ export const getAllRetailsByCompany = async (req: Request, res: Response) => {
     const values: any[] = [];
     const conditions: string[] = [];
 
-    // 🔹 Filter by company_id ONLY if valid
+    // 🔹 Always return only approved rows
+    conditions.push(`status = 'approved'`);
+
+    // 🔹 Optional filter by company_id
     if (company_id && company_id !== "all" && !isNaN(Number(company_id))) {
-      values.push(Number(company_id));
+      const companyIdNum = Number(company_id);
+      values.push(companyIdNum);
       conditions.push(`(company_details->>'id')::int = $${values.length}`);
     }
 
@@ -347,7 +366,7 @@ export const getAllRetailsByCompany = async (req: Request, res: Response) => {
       query += ` WHERE ${conditions.join(" AND ")}`;
     }
 
-    // 🔹 Sort by created_date (TEXT → TIMESTAMPTZ)
+    // 🔹 Sort by created_date
     query += ` ORDER BY created_date::timestamptz DESC`;
 
     console.log("FINAL QUERY:", query, values);

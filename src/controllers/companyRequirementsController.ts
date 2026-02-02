@@ -172,35 +172,49 @@ export const getCurrRequirment = async (req, res) => {
 
 export const getCompanyList = async (req, res, next) => {
   try {
-    const result = await pool.query<CompanyRequirement>(
-      "SELECT * FROM company_requirements",
-    );
+    const login_id = req.user?.login_id || req.user?.id;
+    const numericLoginId = login_id ? Number(login_id) : null;
+
+    if (!numericLoginId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    // 1️⃣ Build query
+    let query = "SELECT * FROM company_requirements WHERE 1=1";
+
+    // 🔹 If login_id doesn't match company_id → only approved companies
+    query += ` AND (status = 'approved' OR company_id = $1)`;
+    const values = [numericLoginId];
+
+    const result = await pool.query(query, values);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "No companies found" });
     }
 
-    res.status(200).json(
-      result.rows
-        .map((row) => ({
-          company_id: row?.company_id,
-          company_name: row?.bid_details?.company_name,
-        }))
-        .filter(
-          (value, index, self) =>
-            index ===
-            self.findIndex(
-              (t) =>
-                t.company_id === value.company_id &&
-                t.company_name === value.company_name,
-            ),
-        ),
-    );
+    // 2️⃣ Map and deduplicate
+    const data = result.rows
+      .map((row) => ({
+        company_id: row?.company_id,
+        company_name: row?.bid_details?.company_name || null,
+      }))
+      .filter(
+        (value, index, self) =>
+          index ===
+          self.findIndex(
+            (t) =>
+              t.company_id === value.company_id &&
+              t.company_name === value.company_name,
+          ),
+      );
+
+    res.status(200).json(data);
   } catch (err) {
     console.error("Error fetching company data:", err);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 export const getRequirementDetails = async (req: Request, res: Response) => {
   if (req.method !== "POST") {
@@ -251,9 +265,6 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
     let bids = bidsRes.rows;
 
     let filteredBids = bids;
-
-    console.log("=================================================", role, company_id)
-
     // If the user is a 3PL, only keep their own bid details
     if (role === "threepl" && company_id) {
       filteredBids = bids.map((bid) => {
@@ -555,7 +566,7 @@ export const threePlRequirements = async (req, res) => {
       return res.status(400).json({ error: "login_id is required" });
     }
 
-    // 1️⃣ Fetch requirements
+    // 1️⃣ Build requirements query
     let query = `SELECT * FROM company_requirements WHERE 1=1`;
     const values: any[] = [];
 
@@ -564,15 +575,21 @@ export const threePlRequirements = async (req, res) => {
       query += ` AND company_id = $${values.length}`;
     }
 
+    // 🔹 If login_id doesn't match company_id → only approved
+    if (company_id && company_id !== login_id) {
+      query += ` AND status = 'approved'`;
+    }
+
     query += ` ORDER BY created_date DESC`;
 
+    // 2️⃣ Fetch requirements
     const { rows: requirements } = await pool.query(query, values);
 
     if (!requirements.length) {
       return res.status(200).json([]);
     }
 
-    // 2️⃣ Fetch bids for these requirements filtered by login_id inside pl_details JSON
+    // 3️⃣ Fetch bids for these requirements filtered by login_id inside pl_details JSON
     const requirementIds = requirements.map((r) => r.id);
 
     const { rows: bids } = await pool.query(
@@ -586,7 +603,7 @@ export const threePlRequirements = async (req, res) => {
       [requirementIds, login_id],
     );
 
-    // 3️⃣ Merge bids into requirements
+    // 4️⃣ Merge bids into requirements
     const enrichedRequirements = requirements.map((req) => ({
       ...req,
       bids: bids.filter((b) => b.requirement_id === req.id),
