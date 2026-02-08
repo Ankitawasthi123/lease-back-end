@@ -432,7 +432,7 @@ export const loginUser = async (req: Request, res: Response) => {
     res.cookie("token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 
@@ -440,7 +440,7 @@ export const loginUser = async (req: Request, res: Response) => {
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
@@ -479,7 +479,7 @@ export const refreshToken = (req: Request, res: Response) => {
     res.cookie("token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 
@@ -492,7 +492,8 @@ export const refreshToken = (req: Request, res: Response) => {
 
 export const logOutUser = async (req: Request, res: Response) => {
   res.clearCookie("token");
-  res.send("Logged out");
+  res.clearCookie("refreshToken");
+  res.json({ message: "Logged out successfully" });
 };
 
 export const getUserProfile = async (req: Request, res: Response) => {

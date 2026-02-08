@@ -4,12 +4,19 @@ import pool from "../../config/db";
 
 export const updateCompanyRequirementStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, requirement_id, status } = req.body;
+    const { login_id, requirement_id, status, reason } = req.body;
 
     // 1️⃣ Validate inputs
     if (!login_id || !requirement_id || !status) {
       return res.status(400).json({
         error: "login_id, requirement_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -31,17 +38,33 @@ export const updateCompanyRequirementStatus = async (req: Request, res: Response
       });
     }
 
-    // 3️⃣ Update requirement status in correct table
-    const updateResult = await pool.query(
-      `
-      UPDATE company_requirements
-      SET status = $1,
-          created_date = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, requirement_id]
-    );
+    // 3️⃣ Update requirement status (and return_reason if applicable)
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE company_requirements
+        SET status = $1,
+            return_reason = $2,
+            created_date = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, requirement_id]
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE company_requirements
+        SET status = $1,
+            return_reason = NULL,
+            created_date = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, requirement_id]
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({
@@ -62,13 +85,19 @@ export const updateCompanyRequirementStatus = async (req: Request, res: Response
 
 export const updateWarehouseStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, warehouse_id, status } = req.body;
+    const { login_id, warehouse_id, status, reason } = req.body;
 
-
-    // 1️⃣ Validate inputs
+    // ✅ Validate input
     if (!login_id || !warehouse_id || !status) {
       return res.status(400).json({
         error: "login_id, warehouse_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -90,17 +119,33 @@ export const updateWarehouseStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // 3️⃣ Update warehouse status
-    const updateResult = await pool.query(
-      `
-      UPDATE warehouse
-      SET status = $1,
-          created_date = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, warehouse_id]
-    );
+    // 3️⃣ Update warehouse status (and return_reason if applicable)
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE warehouse
+        SET status = $1,
+            return_reason = $2,
+            created_date = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, warehouse_id]
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE warehouse
+        SET status = $1,
+            return_reason = NULL,
+            created_date = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, warehouse_id]
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Warehouse not found" });
@@ -120,13 +165,20 @@ export const updateWarehouseStatus = async (req: Request, res: Response) => {
 
 export const updatePitchStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, pitch_id, status } = req.body;
+    const { login_id, pitch_id, status, reason } = req.body;
 
     /* ================= VALIDATION ================= */
 
     if (!login_id || !pitch_id || !status) {
       return res.status(400).json({
         error: "login_id, pitch_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -149,16 +201,32 @@ export const updatePitchStatus = async (req: Request, res: Response) => {
 
     /* ================= UPDATE PITCH ================= */
 
-    const updateResult = await pool.query(
-      `
-      UPDATE pitches
-      SET status = $1,
-          updated_at = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, pitch_id],
-    );
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE pitches
+        SET status = $1,
+            return_reason = $2,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, pitch_id],
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE pitches
+        SET status = $1,
+            return_reason = NULL,
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, pitch_id],
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Pitch not found" });
@@ -178,11 +246,18 @@ export const updatePitchStatus = async (req: Request, res: Response) => {
 
 export const updateRetailStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, retail_id, status } = req.body;
+    const { login_id, retail_id, status, reason } = req.body;
 
     if (!login_id || !retail_id || !status) {
       return res.status(400).json({
         error: "login_id, retail_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -202,17 +277,33 @@ export const updateRetailStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Update retail status
-    const updateResult = await pool.query(
-      `
-      UPDATE retail
-      SET status = $1,
-          created_date = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, retail_id],
-    );
+    // Update retail status (and return_reason if applicable)
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE retail
+        SET status = $1,
+            return_reason = $2,
+            created_date = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, retail_id]
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE retail
+        SET status = $1,
+            return_reason = NULL,
+            created_date = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, retail_id],
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Retail not found" });
@@ -230,11 +321,18 @@ export const updateRetailStatus = async (req: Request, res: Response) => {
 
 export const updateRetailPitchStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, retail_pitch_id, status } = req.body;
+    const { login_id, retail_pitch_id, status, reason } = req.body;
 
     if (!login_id || !retail_pitch_id || !status) {
       return res.status(400).json({
         error: "login_id, retail_pitch_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -254,17 +352,33 @@ export const updateRetailPitchStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // Update retail pitch status
-    const updateResult = await pool.query(
-      `
-      UPDATE retail_pitches
-      SET status = $1,
-          updated_at = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, retail_pitch_id]
-    );
+    // Update retail pitch status (and return_reason if applicable)
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE retail_pitches
+        SET status = $1,
+            return_reason = $2,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, retail_pitch_id]
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE retail_pitches
+        SET status = $1,
+            return_reason = NULL,
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, retail_pitch_id]
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Retail pitch not found" });
@@ -282,12 +396,19 @@ export const updateRetailPitchStatus = async (req: Request, res: Response) => {
 
 export const updateBidStatus = async (req: Request, res: Response) => {
   try {
-    const { login_id, bid_id, status } = req.body;
+    const { login_id, bid_id, status, reason } = req.body;
 
     // ✅ Validate input
     if (!login_id || !bid_id || !status) {
       return res.status(400).json({
         error: "login_id, bid_id, and status are required",
+      });
+    }
+
+    // Validate reason if status is "returned"
+    if (status === "returned" && !reason) {
+      return res.status(400).json({
+        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -307,17 +428,33 @@ export const updateBidStatus = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ Update bid status
-    const updateResult = await pool.query(
-      `
-      UPDATE bids
-      SET status = $1,
-          created_date = NOW()
-      WHERE id = $2
-      RETURNING *
-      `,
-      [status, bid_id]
-    );
+    // ✅ Update bid status (and return_reason if applicable)
+    let updateResult;
+    if (status === "returned") {
+      updateResult = await pool.query(
+        `
+        UPDATE bids
+        SET status = $1,
+            return_reason = $2,
+            created_date = NOW()
+        WHERE id = $3
+        RETURNING *
+        `,
+        [status, reason, bid_id]
+      );
+    } else {
+      updateResult = await pool.query(
+        `
+        UPDATE bids
+        SET status = $1,
+            return_reason = NULL,
+            created_date = NOW()
+        WHERE id = $2
+        RETURNING *
+        `,
+        [status, bid_id]
+      );
+    }
 
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: "Bid not found" });

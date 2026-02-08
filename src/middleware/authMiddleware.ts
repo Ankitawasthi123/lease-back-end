@@ -40,7 +40,7 @@ export const protect: RequestHandler = (req, res, next) => {
         res.cookie("token", newAccessToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: "strict",
+          sameSite: "lax",
           maxAge: 24 * 60 * 60 * 1000,
         });
 
