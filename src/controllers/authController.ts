@@ -9,24 +9,15 @@ import { randomBytes, createHash } from "crypto";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import twilio from "twilio";
-import { Pool } from "pg";
+import config from "../config/env";
 
-const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "postgres",
-  database: process.env.DB_NAME || "demodb",
-  password: process.env.DB_PASSWORD || "Ankit@123",
-  port: 5432,
-});
-
-const JWT_SECRET = process.env.JWT_SECRET || "mysecret";
-const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "your_refresh_jwt_secret";
+const JWT_SECRET = config.JWT_SECRET;
+const JWT_REFRESH_SECRET = config.JWT_REFRESH_SECRET;
 
 /* -------------------- Twilio -------------------- */
 const client = twilio(
-  process.env.TWILIO_SID as string,
-  process.env.TWILIO_AUTH_TOKEN as string
+  config.TWILIO_SID as string,
+  config.TWILIO_AUTH_TOKEN as string
 );
 export const sendMobileOtp = async (phone: string, otp: string) => {
   try {
@@ -45,27 +36,23 @@ export const sendMobileOtp = async (phone: string, otp: string) => {
 };
 
 const sendEmailOtp = async (email: string, otp: string) => {
-  if (
-    !process.env.SMTP_HOST ||
-    !process.env.SMTP_USER ||
-    !process.env.SMTP_PASS
-  ) {
+  if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
     console.warn("SMTP configuration missing. Skipping email OTP.");
     return;
   }
 
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT) || 587,
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
     secure: false, // true for 465, false for 587
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: config.SMTP_USER,
+      pass: config.SMTP_PASS,
     },
   });
 
   await transporter.sendMail({
-    from: process.env.SMTP_FROM,
+    from: config.SMTP_FROM,
     to: email,
     subject: "Email Verification OTP",
     text: `Your OTP is ${otp}. It will expire in 2 minutes.`,
@@ -130,7 +117,7 @@ export const registerUser = async (req: Request, res: Response) => {
       email_otp: emailOtp,
       mobile_otp: mobileOtp,
       otp_expires_at: otpExpiry,
-      mbile_verified: false,
+      mobile_verified: false,
       email_verified: false,
     });
 
@@ -172,7 +159,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
     return res.status(404).json({ message: "User not found" });
   }
 
-  if (user.otp_expires_at < new Date()) {
+  if (user.otp_expires_at && user.otp_expires_at < new Date()) {
     return res.status(400).json({ message: "OTP expired" });
   }
 
@@ -234,26 +221,23 @@ export const completeRegistration = async (req: Request, res: Response) => {
 
     /* ================= FILES ================= */
     const visitingCardBinary =
-      req.files?.["visiting_card_file"]?.[0]?.filename;
+      (req.files as any)?.["visiting_card_file"]?.[0]?.filename;
 
     const digitalSignatureBinary =
-      req.files?.["digital_signature_file"]?.[0]?.filename;
+      (req.files as any)?.["digital_signature_file"]?.[0]?.filename;
 
     const profileImageBinary =
-      req.files?.["profile_image"]?.[0]?.filename;
+      (req.files as any)?.["profile_image"]?.[0]?.filename;
 
     /* ================= FETCH EXISTING USER ================= */
-    const userResult = await pool.query(
-      "SELECT filler_info, profile_image FROM users WHERE id = $1",
-      [userId]
-    );
+    const user = await User.findByPk(userId);
 
-    if (userResult.rowCount === 0) {
+    if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const existingFillerInfo = userResult.rows[0].filler_info || {};
-    const existingProfileImage = userResult.rows[0].profile_image;
+    const existingFillerInfo = (user.filler_info as any) || {};
+    const existingProfileImage = user.profile_image;
 
     /* ================= MERGE FILLER INFO SAFELY ================= */
     const filler_info = {
@@ -279,22 +263,8 @@ export const completeRegistration = async (req: Request, res: Response) => {
       filler_info.digital_signature = existingFillerInfo.digital_signature;
     }
 
-    /* ================= BUILD QUERY ================= */
-    let query = `
-      UPDATE users SET
-        first_name = $1,
-        middle_name = $2,
-        last_name = $3,
-        designation = $4,
-        contact_number = $5,
-        company_info = $6,
-        registered_address = $7,
-        director_info = $8,
-        filler_info = $9,
-        communication_address = $10
-    `;
-
-    const values: any[] = [
+    // ✅ profile image (binary > name > keep existing)
+    const updateData: any = {
       first_name,
       middle_name,
       last_name,
@@ -305,27 +275,19 @@ export const completeRegistration = async (req: Request, res: Response) => {
       director_info,
       filler_info,
       communication_address,
-    ];
+    };
 
-    // ✅ profile image (binary > name > keep existing)
     if (profileImageBinary) {
-      query += `, profile_image = $${values.length + 1}`;
-      values.push(profileImageBinary);
+      updateData.profile_image = profileImageBinary;
     } else if (req.body.profile_image?.trim()) {
-      query += `, profile_image = $${values.length + 1}`;
-      values.push(req.body.profile_image);
-    } else {
-      // keep existing → do nothing
+      updateData.profile_image = req.body.profile_image;
     }
 
-    query += ` WHERE id = $${values.length + 1} RETURNING *`;
-    values.push(userId);
-
-    const result = await pool.query(query, values);
+    await user.update(updateData);
 
     return res.status(200).json({
       message: "User updated successfully",
-      user: result.rows[0],
+      user: user.toJSON(),
     });
   } catch (error) {
     console.error("Error completing registration:", error);
@@ -462,19 +424,31 @@ export const loginUser = async (req: Request, res: Response) => {
       });
     }
 
-    // Both verified – issue token
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "1h" });
+    // Both verified – issue access and refresh tokens
+    const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "24h" });
+    const refreshToken = jwt.sign({ id: user.id }, JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-    res.cookie("token", token, {
+    // Set access token cookie (24 hours)
+    res.cookie("token", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    // Set refresh token cookie (7 days)
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
     return res.json({
       message: "Login successful",
       user,
+      accessToken, // Also return tokens in response for flexibility
+      refreshToken,
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -489,18 +463,30 @@ export const refreshToken = (req: Request, res: Response) => {
     return res.status(401).json({ message: "No refresh token provided" });
   }
 
-  jwt.verify(refreshToken, JWT_REFRESH_SECRET, (err, decoded) => {
+  jwt.verify(refreshToken, JWT_REFRESH_SECRET, (err: any, decoded: any) => {
     if (err) {
       return res
         .status(403)
         .json({ message: "Invalid or expired refresh token" });
     }
 
+    // Issue new access token (24 hours)
     const accessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-      expiresIn: "1h",
+      expiresIn: "24h",
     });
 
-    res.json({ accessToken });
+    // Update the token cookie
+    res.cookie("token", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    res.json({ 
+      message: "Token refreshed successfully",
+      accessToken 
+    });
   });
 };
 
@@ -694,22 +680,20 @@ export async function forgotPassword(req: Request, res: Response) {
   }
 
   try {
-    // 1️⃣ Check if user exists and has verified OTP
-    const result = await pool.query(
-      "SELECT reset_token FROM users WHERE id = $1",
-      [userId]
-    );
+    // 1️⃣ Check if user exists
+    const user = await User.findByPk(userId);
 
-    const user = result.rows[0];
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     // 2️⃣ Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // 3️⃣ Update password and clear OTP/reset_token
-    await pool.query(
-      "UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE id = $2",
-      [hashedPassword, userId]
-    );
+    // 3️⃣ Update password
+    await user.update({
+      password: hashedPassword,
+    });
 
     res.json({ message: "Your password has been reset successfully." });
   } catch (error) {

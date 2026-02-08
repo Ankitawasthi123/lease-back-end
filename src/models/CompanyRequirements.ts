@@ -1,26 +1,31 @@
 import { Model, DataTypes } from "sequelize";
 import sequelize from "../config/data-source";
 
-class Warehouse extends Model {
+class CompanyRequirements extends Model {
   public id!: number;
-  public login_id!: number;
+  public company_id!: number;
   public warehouse_location!: object;
   public warehouse_size!: object;
   public warehouse_compliance!: object;
   public material_details!: object;
+  public labour_details!: object;
+  public office_expenses!: object;
+  public transport!: any[];
+  public requirement_type!: string;
+  public bid_details!: object;
+  public distance!: any[];
   public status!: string;
-  public company_details!: object;
   public created_date!: Date;
 }
 
-Warehouse.init(
+CompanyRequirements.init(
   {
     id: {
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true,
     },
-    login_id: {
+    company_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
@@ -44,15 +49,39 @@ Warehouse.init(
       allowNull: true,
       defaultValue: {},
     },
+    labour_details: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
+    office_expenses: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
+    transport: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+    },
+    requirement_type: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    bid_details: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
+    distance: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: [],
+    },
     status: {
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: "submitted",
-    },
-    company_details: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-      defaultValue: {},
     },
     created_date: {
       type: DataTypes.DATE,
@@ -62,49 +91,10 @@ Warehouse.init(
   },
   {
     sequelize,
-    tableName: "warehouse",
-    modelName: "Warehouse",
+    tableName: "company_requirements",
+    modelName: "CompanyRequirements",
     timestamps: false,
   }
 );
 
-export default Warehouse;
-
-// Type interfaces for request/response (legacy support)
-export interface CreateWarehouseRequest {
-  warehouse_location: object;
-  warehouse_size: string;
-  warehouse_compliance: object;
-  material_details: object;
-  login_id: string;
-  status?: string;
-  company_details?: object;
-}
-
-export interface UpdateWarehouseRequest {
-  login_id: string;
-  id: string;
-  warehouse_location: object;
-  warehouse_size: string;
-  warehouse_compliance: object;
-  material_details: object;
-}
-
-export interface DeleteWarehouseRequest {
-  login_id: string;
-  id: string;
-}
-
-export interface WarehouseResponse {
-  id: string;
-  warehouse_location: object;
-  warehouse_size: string;
-  warehouse_compliance: object;
-  material_details: object;
-  login_id: string;
-  status?: string;
-  company_details?: object;
-  success?: boolean;
-  message?: string;
-  data?: any;
-}
+export default CompanyRequirements;

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -14,6 +14,7 @@ import {
   completeRegistration,
   sendOtpEmail,
   verifyEmailOtp,
+  refreshToken,
 } from "../controllers/authController";
 
 // ---------------- Multer Configuration ----------------
@@ -47,7 +48,7 @@ const upload = multer({ storage });
 // ---------------- Middleware ----------------
 
 // Accept specific files: visiting_card_file, digital_signature_file, profile_image
-export const cpUpload = (req, res, next) => {
+export const cpUpload = (req: Request, res: Response, next: NextFunction) => {
   const fields = [
     { name: "visiting_card_file", maxCount: 1 },
     { name: "digital_signature_file", maxCount: 1 },
@@ -73,6 +74,7 @@ const router = Router();
 
 router.post("/register", registerUser);
 router.post("/login", loginUser);
+router.post("/refresh-token", refreshToken);
 router.get("/logout", logOutUser);
 router.post("/resend-otp", resendOtp);
 router.post("/verifyotp", verifyOtp);

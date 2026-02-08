@@ -30,7 +30,7 @@ import {
   deleteWarehouse,
   getWarehouseCompanyList,
   getWarehousesLocationByUser,
-} from "../controllers/warehouse";
+} from "../controllers/warehouseController";
 import {
   createRetail,
   getAllRetailsByLocation,
@@ -41,7 +41,7 @@ import {
   deleteRetail,
   getRetailCompanyList,
   getUserRetailsLocation,
-} from "../controllers/retail";
+} from "../controllers/retailController";
 import {
   createPitch,
   getPitchById,
@@ -50,7 +50,7 @@ import {
   getPitchesForUser,
   getWarehouseRequirementCompanyList,
   deletePitch,
-} from "../controllers/pitches";
+} from "../controllers/pitchesController";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -62,7 +62,7 @@ import {
   getRetailPitchByLoginAndRetailId,
   updateRetailPitch,
   getRetailPitchCompanyList,
-} from "../controllers/retailPiches";
+} from "../controllers/retailPitchesController";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -169,7 +169,7 @@ router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
 router.put("/pitch/pitch-list", protect, cpUpload, getPitchesForUser);
 router.put("/pitch/delete", protect, cpUpload, deletePitch);
 router.put(
-  "/pitch/pitch-comany-list",
+  "/pitch/pitch-company-list",
   protect,
   cpUpload,
   getWarehouseRequirementCompanyList,

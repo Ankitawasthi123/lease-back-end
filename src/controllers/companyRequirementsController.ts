@@ -1,18 +1,12 @@
 import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
-import pool from "../config/db";
-import User from "../models/User";
-
-interface CompanyRequirement {
-  company_id: string;
-  bid_details: {
-    company_name: string;
-    company_id: string;
-  };
-}
+import { CompanyRequirements, Bid, User } from "../models";
+import { sendErrorResponse } from "../utils/errorResponse";
+import { Op } from "sequelize";
+import sequelize from "../config/data-source";
 
 // Create a new company requirement
-export const createRequirement = async (req, res) => {
+export const createRequirement = async (req: Request, res: Response) => {
   const {
     warehouse_location,
     warehouse_size,
@@ -28,50 +22,38 @@ export const createRequirement = async (req, res) => {
     status,
   } = req.body;
 
-  try {
-    const result = await pool.query(
-      `INSERT INTO company_requirements (
-        warehouse_location,
-        company_id,
-        warehouse_size,
-        warehouse_compliance,
-        material_details,
-        labour_details,
-        office_expenses,
-        transport,
-        requirement_type,
-        bid_details,
-        distance,
-        status,
-        created_date
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()
-      )
-      RETURNING *`,
-      [
-        JSON.stringify(warehouse_location || {}),
-        company_id,
-        JSON.stringify(warehouse_size || {}),
-        JSON.stringify(warehouse_compliance || {}),
-        JSON.stringify(material_details || {}),
-        JSON.stringify(labour_details || {}),
-        JSON.stringify(office_expenses || {}),
-        JSON.stringify(transport || []),
-        requirement_type,
-        JSON.stringify(bid_details || {}),
-        JSON.stringify(distance || []),
-        status || "submitted",
-      ],
-    );
+  if (!company_id) {
+    return sendErrorResponse(res, 400, "company_id is required");
+  }
 
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error("Create Requirement Error:", err);
-    res.status(500).json({ error: err.message });
+  try {
+    const requirement = await CompanyRequirements.create({
+      warehouse_location: warehouse_location || {},
+      company_id: Number(company_id),
+      warehouse_size: warehouse_size || {},
+      warehouse_compliance: warehouse_compliance || {},
+      material_details: material_details || {},
+      labour_details: labour_details || {},
+      office_expenses: office_expenses || {},
+      transport: transport || [],
+      requirement_type,
+      bid_details: bid_details || {},
+      distance: distance || [],
+      status: status || "submitted",
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Requirement created successfully",
+      data: requirement.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Create Requirement Error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to create requirement", err);
   }
 };
 
-export const updateCompanyRequirements = async (req, res) => {
+export const updateCompanyRequirements = async (req: Request, res: Response) => {
   const {
     id,
     warehouse_location,
@@ -88,130 +70,114 @@ export const updateCompanyRequirements = async (req, res) => {
   } = req.body;
 
   if (!id || !company_id) {
-    return res
-      .status(400)
-      .json({ error: "Both id and company_id are required" });
+    return sendErrorResponse(res, 400, "id and company_id are required");
   }
 
   try {
-    const result = await pool.query(
-      `UPDATE company_requirements
-       SET
-         warehouse_location = $1,
-         warehouse_size = $2,
-         warehouse_compliance = $3,
-         material_details = $4,
-         labour_details = $5,
-         office_expenses = $6,
-         transport = $7,
-         requirement_type = $8,
-         bid_details = $9,
-         distance = $10
-       WHERE id = $11 AND company_id = $12
-       RETURNING *`,
-      [
-        warehouse_location,
-        warehouse_size,
-        JSON.stringify(warehouse_compliance || {}),
-        JSON.stringify(material_details || {}),
-        JSON.stringify(labour_details || {}),
-        JSON.stringify(office_expenses || {}),
-        JSON.stringify(transport || []),
-        requirement_type,
-        JSON.stringify(bid_details || {}),
-        JSON.stringify(distance || []),
-        id,
-        company_id,
-      ],
-    );
+    const requirement = await CompanyRequirements.findOne({
+      where: { id: Number(id), company_id: Number(company_id) },
+    });
 
-    if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "No matching record found for this ID and company_id" });
+    if (!requirement) {
+      return sendErrorResponse(res, 404, "Requirement not found");
     }
 
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    console.error("Update error:", err);
-    res.status(500).json({ error: err.message });
+    await requirement.update({
+      warehouse_location: warehouse_location || requirement.warehouse_location,
+      warehouse_size: warehouse_size || requirement.warehouse_size,
+      warehouse_compliance: warehouse_compliance || requirement.warehouse_compliance,
+      material_details: material_details || requirement.material_details,
+      labour_details: labour_details || requirement.labour_details,
+      office_expenses: office_expenses || requirement.office_expenses,
+      transport: transport || requirement.transport,
+      requirement_type: requirement_type || requirement.requirement_type,
+      bid_details: bid_details || requirement.bid_details,
+      distance: distance || requirement.distance,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Requirement updated successfully",
+      data: requirement.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Update error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to update requirement", err);
   }
 };
 
-export const getCurrRequirment = async (req, res) => {
+export const getCurrRequirment = async (req: Request, res: Response) => {
   const { id } = req.body;
 
   if (!id) {
-    return res.status(400).json({ error: "ID is required" });
+    return sendErrorResponse(res, 400, "ID is required");
   }
 
   try {
     const companyIdParsed = parseInt(id, 10);
 
     if (isNaN(companyIdParsed)) {
-      return res.status(400).json({ error: "Invalid ID format" });
+      return sendErrorResponse(res, 400, "ID must be a valid number");
     }
 
-    const result = await pool.query(
-      "SELECT * FROM company_requirements WHERE id = $1",
-      [companyIdParsed],
-    );
+    const requirement = await CompanyRequirements.findByPk(companyIdParsed);
 
-    if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No company requirements found for this company" });
+    if (!requirement) {
+      return sendErrorResponse(res, 404, "Requirement not found");
     }
 
-    res.status(200).json(result.rows[0]);
-  } catch (err) {
-    console.error("Error fetching company requirements:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(200).json({
+      success: true,
+      data: requirement.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Error fetching company requirements:", err.message);
+    return sendErrorResponse(res, 500, "Failed to fetch requirement", err);
   }
 };
 
-export const getCompanyList = async (req, res, next) => {
+export const getCompanyList = async (req: Request, res: Response) => {
   try {
     const login_id = req.user?.login_id || req.user?.id;
     const numericLoginId = login_id ? Number(login_id) : null;
 
     if (!numericLoginId) {
-      return res.status(401).json({ message: "User not authenticated" });
+      return sendErrorResponse(res, 401, "User not authenticated");
     }
 
-    // 1️⃣ Build query
-    let query = "SELECT * FROM company_requirements WHERE 1=1";
+    // Fetch requirements where status is approved or company_id matches
+    const requirements = await CompanyRequirements.findAll({
+      where: {
+        [Op.or]: [
+          { status: "approved" },
+          { company_id: numericLoginId },
+        ],
+      },
+    });
 
-    // 🔹 If login_id doesn't match company_id → only approved companies
-    query += ` AND (status = 'approved' OR company_id = $1)`;
-    const values = [numericLoginId];
-
-    const result = await pool.query(query, values);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "No companies found" });
+    if (requirements.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
     }
 
-    // 2️⃣ Map and deduplicate
-    const data = result.rows
-      .map((row) => ({
-        company_id: row?.company_id,
-        company_name: row?.bid_details?.company_name || null,
-      }))
-      .filter(
-        (value, index, self) =>
-          index ===
-          self.findIndex(
-            (t) =>
-              t.company_id === value.company_id &&
-              t.company_name === value.company_name,
-          ),
-      );
+    // Map and deduplicate
+    const uniqueCompanies = new Map<string, string>();
+    requirements.forEach((req: any) => {
+      const company = req.bid_details || {};
+      const key = `${req.company_id}`;
+      if (!uniqueCompanies.has(key)) {
+        uniqueCompanies.set(key, company.company_name || null);
+      }
+    });
 
-    res.status(200).json(data);
-  } catch (err) {
-    console.error("Error fetching company data:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    const data = Array.from(uniqueCompanies.entries()).map(([id, name]) => ({
+      company_id: parseInt(id),
+      company_name: name,
+    }));
+
+    res.status(200).json({ success: true, data });
+  } catch (err: any) {
+    console.error("Error fetching company data:", err.message);
+    return sendErrorResponse(res, 500, "Failed to fetch companies", err);
   }
 };
 
@@ -219,82 +185,74 @@ export const getCompanyList = async (req, res, next) => {
 export const getRequirementDetails = async (req: Request, res: Response) => {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
+    return sendErrorResponse(res, 405, `Method ${req.method} not allowed`);
   }
 
-  const { id, company_id, role } = req.body; // login_id is needed for threepl
+  const { id, company_id, role } = req.body;
   if (!id || !company_id) {
-    return res
-      .status(400)
-      .json({ error: "Both 'id' and 'company_id' are required" });
+    return sendErrorResponse(res, 400, "id and company_id are required");
   }
 
   const requirementId = parseInt(id, 10);
   const companyId = parseInt(company_id, 10);
   if (isNaN(requirementId) || isNaN(companyId)) {
-    return res
-      .status(400)
-      .json({ error: "'id' and 'company_id' must be numeric" });
+    return sendErrorResponse(res, 400, "id and company_id must be numeric");
   }
 
   try {
-    // 1️⃣ Fetch the requirement
-    let reqRes;
+    // Fetch the requirement
+    let requirement;
     if (role === "threepl") {
-      reqRes = await pool.query(
-        `SELECT * FROM company_requirements WHERE id = $1`,
-        [requirementId],
-      );
+      requirement = await CompanyRequirements.findByPk(requirementId);
     } else {
-      reqRes = await pool.query(
-        `SELECT * FROM company_requirements WHERE id = $1 AND company_id = $2`,
-        [requirementId, companyId],
-      );
+      requirement = await CompanyRequirements.findOne({
+        where: { id: requirementId, company_id: companyId },
+      });
     }
 
-    if (reqRes.rows.length === 0) {
-      return res.status(404).json({ message: "Requirement not found" });
+    if (!requirement) {
+      return sendErrorResponse(res, 404, "Requirement not found");
     }
-    const requirement = reqRes.rows[0];
 
-    // 2️⃣ Fetch related bids
-    const bidsRes = await pool.query(
-      `SELECT * FROM bids WHERE requirement_id = $1`,
-      [requirementId],
-    );
-    let bids = bidsRes.rows;
+    // Fetch related bids
+    const bids = await Bid.findAll({
+      where: { requirement_id: requirementId },
+    });
 
     let filteredBids = bids;
     // If the user is a 3PL, only keep their own bid details
     if (role === "threepl" && company_id) {
-      filteredBids = bids.map((bid) => {
+      filteredBids = bids.map((bid: any) => {
         if (bid.pl_details?.id === company_id) {
-          return bid; // keep full bid
+          return bid.toJSON();
         } else {
           return {
-            ...bid,
-            bid_details: {}, // hide other 3PLs' bid details
+            ...bid.toJSON(),
+            bid_details: {},
           };
         }
       });
+    } else {
+      filteredBids = bids.map((b: any) => b.toJSON());
     }
 
     return res.status(200).json({
-      ...requirement,
-      bids: filteredBids,
+      success: true,
+      data: {
+        ...requirement.toJSON(),
+        bids: filteredBids,
+      },
     });
-  } catch (err) {
-    console.error("Error fetching requirement details:", err);
-    return res.status(500).json({ error: "Internal server error" });
+  } catch (err: any) {
+    console.error("Error fetching requirement details:", err.message);
+    return sendErrorResponse(res, 500, "Failed to fetch requirement details", err);
   }
 };
 
-export const deleteCompanyRequirements = async (req, res) => {
+export const deleteCompanyRequirements = async (req: Request, res: Response) => {
   const { company_id, requirement_id } = req.body;
   if (!requirement_id || !company_id) {
-    return res.status(400).json({
-      error: "Requirement ID and login ID are required",
-    });
+    return sendErrorResponse(res, 400, "requirement_id and company_id are required");
   }
 
   try {
@@ -302,60 +260,44 @@ export const deleteCompanyRequirements = async (req, res) => {
     const loginIdParsed = parseInt(company_id, 10);
 
     if (isNaN(requirementIdParsed) || isNaN(loginIdParsed)) {
-      return res.status(400).json({ error: "Invalid ID format" });
+      return sendErrorResponse(res, 400, "IDs must be valid numbers");
     }
 
-    // ✅ Step 1: Fetch user and check role
-    const userResult = await pool.query(
-      "SELECT id, role FROM users WHERE id = $1",
-      [loginIdParsed],
-    );
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
+    // Fetch user and check role
+    const user = await User.findByPk(loginIdParsed);
+    if (!user) {
+      return sendErrorResponse(res, 404, "User not found");
     }
 
-    const user = userResult.rows[0];
     const isAdmin = user.role === "admin";
 
-    // ✅ Step 2: Fetch requirement
-    const requirementResult = await pool.query(
-      "SELECT id, status, company_id FROM company_requirements WHERE id = $1",
-      [requirementIdParsed],
-    );
-
-    if (requirementResult.rows.length === 0) {
-      return res.status(404).json({ error: "Requirement not found" });
+    // Fetch requirement
+    const requirement = await CompanyRequirements.findByPk(requirementIdParsed);
+    if (!requirement) {
+      return sendErrorResponse(res, 404, "Requirement not found");
     }
 
-    const requirement = requirementResult.rows[0];
-
-    // 🔒 Step 3: Check permissions for normal users
+    // Check permissions for normal users
     if (!isAdmin) {
       if (Number(requirement.company_id) !== loginIdParsed) {
-        return res
-          .status(403)
-          .json({ error: "You are not allowed to delete this requirement" });
+        return sendErrorResponse(res, 403, "You do not have permission to delete this requirement");
       }
 
       if (requirement.status !== "submitted") {
-        return res
-          .status(400)
-          .json({ error: "Only submitted requirements can be deleted" });
+        return sendErrorResponse(res, 400, "Only submitted requirements can be deleted");
       }
     }
 
-    // 🗑️ Step 4: Delete
-    await pool.query("DELETE FROM company_requirements WHERE id = $1", [
-      requirementIdParsed,
-    ]);
+    // Delete
+    await requirement.destroy();
 
     return res.status(200).json({
+      success: true,
       message: "Requirement deleted successfully",
-      requirement_id: requirementIdParsed,
     });
-  } catch (err) {
-    console.error("Delete requirement error:", err);
-    return res.status(500).json({ error: "Internal Server Error" });
+  } catch (err: any) {
+    console.error("Delete requirement error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to delete requirement", err);
   }
 };
 
@@ -366,252 +308,226 @@ export const getLocationListLocationsByUser = async (
   const { login_id } = req.params;
 
   if (!login_id || isNaN(Number(login_id))) {
-    return res
-      .status(400)
-      .json({ error: "'login_id' is required and must be numeric" });
+    return sendErrorResponse(res, 400, "login_id is required and must be numeric");
   }
 
   const companyId = Number(login_id);
 
   try {
-    const result = await pool.query(
-      `
-      SELECT warehouse_location,
-             warehouse_location->>'display_name' AS display_name
-      FROM company_requirements
-      WHERE company_id = $1
-        AND warehouse_location IS NOT NULL
-      ORDER BY display_name
-      `,
-      [companyId],
-    );
+    const requirements = await CompanyRequirements.findAll({
+      where: { company_id: companyId },
+      attributes: ["warehouse_location"],
+      raw: true,
+    });
 
-    if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No warehouse locations found for this company" });
+    if (requirements.length === 0) {
+      return res.status(200).json({ success: true, locations: [] });
     }
 
-    // Return only warehouse_location objects in the locations array
-    const locations = result.rows.map(
-      (row) => row.warehouse_location?.display_name,
-    );
+    // Extract unique display names
+    const locationSet = new Set<string>();
+    requirements.forEach((req: any) => {
+      if (req.warehouse_location?.display_name) {
+        locationSet.add(req.warehouse_location.display_name);
+      }
+    });
+
+    const locations = Array.from(locationSet).sort();
 
     return res.status(200).json({
+      success: true,
       company_id: companyId,
       locations,
     });
-  } catch (err) {
-    console.error(
-      "Error fetching warehouse locations:",
-      err.message,
-      err.stack,
-    );
-    return res
-      .status(500)
-      .json({ error: "Internal server error", details: err.message });
+  } catch (err: any) {
+    console.error("Error fetching warehouse locations:", err.message);
+    return sendErrorResponse(res, 500, "Failed to fetch locations", err);
   }
 };
 
-export const liveBids = async (req, res) => {
+export const liveBids = async (req: Request, res: Response) => {
   try {
     const login_id = req.params.login_id ? Number(req.params.login_id) : null;
     if (!login_id) {
-      return res.status(400).json({ error: "login_id is required" });
+      return sendErrorResponse(res, 400, "login_id is required");
     }
 
-    // 1️⃣ Get user role
-    const userResult = await pool.query(
-      `SELECT id, role FROM users WHERE id = $1`,
-      [login_id],
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
+    // Get user role
+    const user = await User.findByPk(login_id);
+    if (!user) {
+      return sendErrorResponse(res, 404, "User not found");
     }
 
-    const { role } = userResult.rows[0];
+    const { role } = user;
 
-    // 2️⃣ Fetch requirements
-    let requirementsQuery = `SELECT * FROM company_requirements ORDER BY created_date DESC`;
-    let requirementsValues: any[] = [];
-
-    // If user is a company → filter by their company_id
+    // Fetch requirements
+    let requirementsWhere: any = {};
     if (role === "company") {
-      requirementsQuery = `
-        SELECT *
-        FROM company_requirements
-        WHERE company_id = $1
-        ORDER BY created_date DESC
-      `;
-      requirementsValues.push(login_id);
+      requirementsWhere.company_id = login_id;
     }
 
-    const requirementsResult = await pool.query(
-      requirementsQuery,
-      requirementsValues,
-    );
-    const requirements = requirementsResult.rows;
+    const requirements = await CompanyRequirements.findAll({
+      where: requirementsWhere,
+      order: [["created_date", "DESC"]],
+    });
 
     if (requirements.length === 0) {
-      return res.status(200).json([]);
+      return res.status(200).json({ success: true, data: [] });
     }
 
-    // 3️⃣ Collect requirement IDs
-    const requirementIds = requirements.map((r) => r.id);
+    // Collect requirement IDs
+    const requirementIds = requirements.map((r: any) => r.id);
 
-    // 4️⃣ Fetch today's bids
-    let bidsQuery = `
-      SELECT *
-      FROM bids
-      WHERE requirement_id = ANY($1::int[])
-        AND (bid_details->>'bid_process_date')::date = CURRENT_DATE
-      ORDER BY created_date DESC
-    `;
-    const bidsValues: any[] = [requirementIds];
-
-    // If user is a 3PL → filter bids where pl_details.id = login_id
+    // Fetch bids
+    let bids: any[] = [];
+    
     if (role === "threepl") {
-      bidsQuery = `
-        SELECT *
-        FROM bids
-        WHERE requirement_id = ANY($1::int[])
-          AND (pl_details->>'id')::int = $2
-        ORDER BY created_date DESC
-      `;
-      bidsValues.push(login_id);
+      // For 3PL, filter bids manually
+      const allBids = await Bid.findAll({
+        where: {
+          requirement_id: { [Op.in]: requirementIds },
+        },
+        order: [["created_date", "DESC"]],
+      });
+      bids = allBids.filter((b: any) => b.pl_details?.id === login_id);
+    } else {
+      bids = await Bid.findAll({
+        where: {
+          requirement_id: { [Op.in]: requirementIds },
+        },
+        order: [["created_date", "DESC"]],
+      });
     }
 
-    const bidsResult = await pool.query(bidsQuery, bidsValues);
-    const bids = bidsResult.rows;
-    // 5️⃣ Attach bids to requirements
+    // Attach bids to requirements
     const enrichedRequirements = requirements
-      .map((req) => {
-        // Attach bids to the requirement
-        const reqBids = bids.filter((bid) => bid.requirement_id === req.id);
+      .map((req: any) => {
+        const reqBids = bids.filter((bid: any) => bid.requirement_id === req.id);
 
         // For 3PL: skip this requirement if they have not placed any bid
-        if (
-          role === "threepl" &&
-          !reqBids.some((bid) => bid.pl_details?.id === login_id)
-        ) {
-          return null; // mark as null to filter later
+        if (role === "threepl" && !reqBids.some((bid: any) => bid.pl_details?.id === login_id)) {
+          return null;
         }
 
         return {
-          ...req,
-          bids: reqBids,
+          ...req.toJSON(),
+          bids: reqBids.map((b: any) => b.toJSON()),
         };
       })
-      .filter(Boolean); // remove any nulls
+      .filter(Boolean);
 
-    return res.status(200).json(enrichedRequirements);
-  } catch (err) {
-    console.error("Error fetching live bids:", err);
-    return res.status(500).json({ error: "Internal Server Error" });
+    return res.status(200).json({ success: true, data: enrichedRequirements });
+  } catch (err: any) {
+    console.error("Error fetching live bids:", err.message);
+    return sendErrorResponse(res, 500, "Failed to fetch bids", err);
   }
 };
 
-export const getCompanyRequirementsList = async (req, res) => {
+export const getCompanyRequirementsList = async (req: Request, res: Response) => {
   try {
     const login_id = Number(req.body.login_id);
     const location = req.body.location; // optional
 
     if (!login_id) {
-      return res.status(400).json({ error: "login_id is required" });
+      return sendErrorResponse(res, 400, "login_id is required");
     }
 
-    let query = `
-      SELECT 
-        cr.*,
-        COALESCE(
-          json_agg(b.*) FILTER (WHERE b.id IS NOT NULL),
-          '[]'
-        ) AS bids
-      FROM company_requirements cr
-      LEFT JOIN bids b 
-        ON b.requirement_id = cr.id
-      WHERE cr.company_id = $1
-    `;
-
-    const values = [login_id];
+    let where: any = { company_id: login_id };
 
     if (location && location !== "null") {
-      query += `
-        AND LOWER(cr.warehouse_location->>'display_name') = LOWER($2)
-      `;
-      values.push(location);
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push(
+        sequelize.where(
+          sequelize.cast(sequelize.col('warehouse_location'), 'text'),
+          Op.like,
+          `%"display_name": "${location}"%`
+        )
+      );
     }
 
-    query += `
-      GROUP BY cr.id
-      ORDER BY cr.created_date DESC
-    `;
+    const requirements = await CompanyRequirements.findAll({
+      where,
+      order: [["created_date", "DESC"]],
+    });
 
-    const { rows } = await pool.query(query, values);
+    if (requirements.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
 
-    return res.status(200).json(rows);
-  } catch (error) {
-    console.error("🔥 API ERROR:", error);
-    return res.status(500).json({ error: error.message });
+    // Fetch bids for these requirements
+    const requirementIds = requirements.map((r: any) => r.id);
+    const bids = await Bid.findAll({
+      where: {
+        requirement_id: { [Op.in]: requirementIds },
+      },
+    });
+
+    // Merge bids into requirements
+    const enrichedRequirements = requirements.map((req: any) => ({
+      ...req.toJSON(),
+      bids: bids.filter((b: any) => b.requirement_id === req.id).map((b: any) => b.toJSON()),
+    }));
+
+    return res.status(200).json({ success: true, data: enrichedRequirements });
+  } catch (error: any) {
+    console.error("🔥 API ERROR:", error.message);
+    return sendErrorResponse(res, 500, "Failed to fetch requirements", error);
   }
 };
 
-export const threePlRequirements = async (req, res) => {
+export const threePlRequirements = async (req: Request, res: Response) => {
   try {
     const company_id = req.body.company_id ? Number(req.body.company_id) : null;
-    const login_id = req.body.login_id ? Number(req.body.login_id) : null; // 3PL user ID
+    const login_id = req.body.login_id ? Number(req.body.login_id) : null;
 
     if (!login_id) {
-      return res.status(400).json({ error: "login_id is required" });
+      return sendErrorResponse(res, 400, "login_id is required");
     }
 
-    // 1️⃣ Build requirements query
-    let query = `SELECT * FROM company_requirements WHERE 1=1`;
-    const values: any[] = [];
+    // Build requirements query
+    let where: any = {};
 
     if (company_id) {
-      values.push(company_id);
-      query += ` AND company_id = $${values.length}`;
+      where.company_id = company_id;
+
+      // If login_id doesn't match company_id → only approved
+      if (company_id !== login_id) {
+        where.status = "approved";
+      }
     }
 
-    // 🔹 If login_id doesn't match company_id → only approved
-    if (company_id && company_id !== login_id) {
-      query += ` AND status = 'approved'`;
+    // Fetch requirements
+    const requirements = await CompanyRequirements.findAll({
+      where,
+      order: [["created_date", "DESC"]],
+    });
+
+    if (requirements.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
     }
 
-    query += ` ORDER BY created_date DESC`;
+    // Fetch bids for these requirements filtered by login_id inside pl_details JSON
+    const requirementIds = requirements.map((r: any) => r.id);
 
-    // 2️⃣ Fetch requirements
-    const { rows: requirements } = await pool.query(query, values);
+    const bids = await Bid.findAll({
+      where: {
+        requirement_id: { [Op.in]: requirementIds },
+      },
+      order: [["created_date", "DESC"]],
+    });
 
-    if (!requirements.length) {
-      return res.status(200).json([]);
-    }
+    // Filter bids where pl_details.id matches login_id
+    const filteredBids = bids.filter((b: any) => b.pl_details?.id === login_id);
 
-    // 3️⃣ Fetch bids for these requirements filtered by login_id inside pl_details JSON
-    const requirementIds = requirements.map((r) => r.id);
-
-    const { rows: bids } = await pool.query(
-      `
-      SELECT *
-      FROM bids
-      WHERE requirement_id = ANY($1)
-        AND (pl_details->>'id')::int = $2
-      ORDER BY created_date DESC
-      `,
-      [requirementIds, login_id],
-    );
-
-    // 4️⃣ Merge bids into requirements
-    const enrichedRequirements = requirements.map((req) => ({
-      ...req,
-      bids: bids.filter((b) => b.requirement_id === req.id),
+    // Merge bids into requirements
+    const enrichedRequirements = requirements.map((req: any) => ({
+      ...req.toJSON(),
+      bids: filteredBids.filter((b: any) => b.requirement_id === req.id).map((b: any) => b.toJSON()),
     }));
 
-    return res.status(200).json(enrichedRequirements);
-  } catch (error) {
-    console.error("🔥 API ERROR:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, data: enrichedRequirements });
+  } catch (error: any) {
+    console.error("🔥 API ERROR:", error.message);
+    return sendErrorResponse(res, 500, "Failed to fetch requirements", error);
   }
 };

@@ -21,6 +21,16 @@ import {
   updateUserStatus,
 } from "../controllers/admin/adminUpdateController";
 
+import {
+  deleteCompanyRequirement,
+  deleteWarehouse,
+  deletePitch,
+  deleteRetail,
+  deleteRetailPitch,
+  deleteBid,
+  deleteUser,
+} from "../controllers/admin/adminDeleteController";
+
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -62,17 +72,22 @@ router.get("/warehouse-list", protect, getAllWarehousesList);
 router.get("/retail-list", protect, getRetailListAdmin);
 router.get("/warehouse-pitches", protect, getAllPitchesAdmin);
 router.get("/retail-pitches", protect, getAllPitchesAdmin);
-router.put(
-  "/company-requirements/status",
-  protect,
-  updateCompanyRequirementStatus,
-);
+router.put("/company-requirements/status", protect, updateCompanyRequirementStatus);
 router.put("/warehouse/status", protect, updateWarehouseStatus);
 router.put("/pitches/status", protect, updatePitchStatus);
 router.put("/retails/status", protect, updateRetailStatus);
 router.put("/retail-piches/status", protect, updateRetailPitchStatus);
 router.put("/bids/status", protect, updateBidStatus);
 router.put("/users/status", protect, updateUserStatus);
+
+// DELETE ROUTES
+router.delete("/company-requirements", protect, deleteCompanyRequirement);
+router.delete("/warehouse", protect, deleteWarehouse);
+router.delete("/pitches", protect, deletePitch);
+router.delete("/retails", protect, deleteRetail);
+router.delete("/retail-pitches", protect, deleteRetailPitch);
+router.delete("/bids", protect, deleteBid);
+router.delete("/users", protect, deleteUser);
 
 
 

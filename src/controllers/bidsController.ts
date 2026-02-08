@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import pool from "../config/db";
+import { Bid, CompanyRequirements } from "../models";
 
 export const createBid = async (req: Request, res: Response) => {
   try {
@@ -28,63 +28,36 @@ export const createBid = async (req: Request, res: Response) => {
     }
 
     const bidStatus = status || "PENDING";
-    const bidDetailsJson = JSON.stringify(bid_details);
 
-    let query: string;
-    let values: any[];
+    let bid: any;
 
     if (bid_id) {
-      // ✅ UPDATE bid (also update created_date)
-      query = `
-        UPDATE bids
-        SET
-          requirement_id = $1,
-          pl_details = $2,
-          bid_type = $3,
-          bid_details = $4,
-          status = $5,
-          created_date = NOW()
-        WHERE id = $6
-        RETURNING *;
-      `;
-
-      values = [
-        requirement_id,
+      // ✅ UPDATE bid
+      bid = await Bid.findByPk(Number(bid_id));
+      if (!bid) {
+        return res.status(404).json({ message: "Bid not found" });
+      }
+      await bid.update({
+        requirement_id: Number(requirement_id),
         pl_details,
         bid_type,
-        bidDetailsJson,
-        bidStatus,
-        bid_id,
-      ];
+        bid_details,
+        status: bidStatus,
+      });
     } else {
       // ✅ CREATE bid
-      query = `
-        INSERT INTO bids (
-          requirement_id,
-          pl_details,
-          bid_type,
-          bid_details,
-          status,
-          created_date
-        )
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        RETURNING *;
-      `;
-
-      values = [
-        requirement_id,
+      bid = await Bid.create({
+        requirement_id: Number(requirement_id),
         pl_details,
         bid_type,
-        bidDetailsJson,
-        bidStatus,
-      ];
+        bid_details,
+        status: bidStatus,
+      });
     }
-
-    const result = await pool.query(query, values);
 
     return res.status(200).json({
       message: bid_id ? "Bid updated successfully" : "Bid created successfully",
-      bid: result.rows[0],
+      bid: bid.toJSON(),
     });
   } catch (error: any) {
     console.error("Error processing bid:", error.message || error);
@@ -95,6 +68,7 @@ export const createBid = async (req: Request, res: Response) => {
 export const getBidsForUserAndCompany = async (req: Request, res: Response) => {
   try {
     const { login_id, company_id } = req.body;
+    console.log("Fetching bids for login_id:", login_id, "company_id:", company_id);
 
     if (!login_id || !company_id) {
       return res
@@ -102,31 +76,14 @@ export const getBidsForUserAndCompany = async (req: Request, res: Response) => {
         .json({ message: "login_id and company_id are required" });
     }
 
-    const query = `
-      SELECT
-        b.*,
-        cr.id AS requirement_id,
-        cr.warehouse_compliance,
-        cr.company_id,
-        cr.bid_details->>'company_name' AS company_name,
-        cr.warehouse_location,
-        cr.bid_details
-      FROM bids b
-      INNER JOIN company_requirements cr
-        ON cr.id = b.requirement_id
-      WHERE cr.company_id = $2
-        AND (
-          (b.pl_details->>'id')::int = $1
-          OR b.status = 'approved'
-        )
-      ORDER BY b.id ASC
-    `;
-
-    const values = [login_id, company_id];
-    const result = await pool.query(query, values);
+    const bids = await Bid.findAll({
+      where: {
+        requirement_id: company_id,
+      },
+    });
 
     return res.status(200).json({
-      bids: result.rows,
+      bids: bids.map(b => b.toJSON()),
     });
   } catch (error) {
     console.error("Error fetching bids:", error);
@@ -134,7 +91,7 @@ export const getBidsForUserAndCompany = async (req: Request, res: Response) => {
   }
 };
 
-export const getBidsCompanyList = async (req, res) => {
+export const getBidsCompanyList = async (req: any, res: Response) => {
   try {
     const { login_id } = req.body;
 
@@ -142,27 +99,30 @@ export const getBidsCompanyList = async (req, res) => {
       return res.status(400).json({ message: "login_id is required" });
     }
 
-    const result = await pool.query(
-      `
-      SELECT DISTINCT ON (cr.company_id)
-        cr.company_id,
-        cr.bid_details->>'company_name' AS company_name
-      FROM bids b
-      INNER JOIN company_requirements cr
-        ON cr.id = b.requirement_id
-      WHERE (b.pl_details->>'id')::int = $1
-      ORDER BY cr.company_id, cr.bid_details->>'company_name' ASC
-      `,
-      [login_id],
-    );
+    const bids = await Bid.findAll();
+    
+    // Get unique company IDs from requirements
+    const companies = new Map();
+    for (const bid of bids) {
+      const requirement = await CompanyRequirements.findByPk(bid.requirement_id);
+      if (requirement) {
+        const companyInfo = requirement.toJSON();
+        if (!companies.has(companyInfo.company_id)) {
+          companies.set(companyInfo.company_id, {
+            company_id: companyInfo.company_id,
+            company_name: companyInfo.bid_details?.company_name || 'Unknown',
+          });
+        }
+      }
+    }
 
-    if (result.rows.length === 0) {
+    if (companies.size === 0) {
       return res
         .status(404)
         .json({ message: "No companies found for this user" });
     }
 
-    res.status(200).json(result.rows);
+    res.status(200).json(Array.from(companies.values()));
   } catch (err) {
     console.error("Error fetching company list:", err);
     res.status(500).json({ error: "Internal Server Error" });
@@ -184,25 +144,22 @@ export const deleteBid = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    /**
-     * Delete ONLY IF:
-     * 1. pl_details->>'id' matches loginId
-     * 2. status === 'submitted'
-     */
-    const query = `
-      DELETE FROM bids
-      WHERE id = $1
-        AND pl_details->>'id' = $2::text
-        AND LOWER(status) = 'submitted';
-    `;
+    const bid = await Bid.findByPk(Number(bid_id));
 
-    const result = await pool.query(query, [bid_id, loginId]);
-
-    if (result.rowCount === 0) {
+    if (!bid) {
       return res.status(403).json({
         message: "Bid not found or you are not allowed to delete this bid",
       });
     }
+
+    // Check if bid status is 'submitted'
+    if (bid.status?.toLowerCase() !== 'submitted') {
+      return res.status(403).json({
+        message: "Only submitted bids can be deleted",
+      });
+    }
+
+    await bid.destroy();
 
     // ✅ Only send success message
     return res.status(200).json({ message: "Bid deleted successfully" });

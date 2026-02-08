@@ -2,10 +2,10 @@ import { Router, Request, Response, response } from "express";
 import { protect } from "../../middleware/authMiddleware";
 import pool from "../../config/db";
 
-export const getCompanyRequirementsList = async (req, res) => {
+export const getCompanyRequirementsList = async (req: Request, res: Response) => {
   try {
     // ✅ Read login_id and optional location from body
-    const login_id = parseInt(req.query.login_id, 10);
+    const login_id = parseInt(req.query.login_id as string, 10);
     if (isNaN(login_id)) {
       return res.status(400).json({ error: "login_id must be a valid number" });
     }
@@ -61,10 +61,10 @@ export const getCompanyRequirementsList = async (req, res) => {
   }
 };
 
-export const getAllUsersList = async (req, res) => {
+export const getAllUsersList = async (req: Request, res: Response) => {
   try {
     // ✅ Read login_id from query params for GET
-    const login_id = parseInt(req.query.login_id, 10);
+    const login_id = parseInt(req.query.login_id as string, 10);
 
     if (isNaN(login_id)) {
       return res.status(400).json({ error: "login_id must be a valid number" });
