@@ -124,7 +124,6 @@ export const createRetailPitch = async (req: Request, res: Response) => {
   }
 };
 
-
 /**
  * ✅ GET All Retail Pitches (optionally by login_id)
  */
@@ -288,7 +287,6 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 /**
  * ✅ GET Retail Pitch by ID

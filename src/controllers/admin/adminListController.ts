@@ -1,6 +1,6 @@
 import { Router, Request, Response, response } from "express";
-import { protect } from "../middleware/authMiddleware";
-import pool from "../config/db";
+import { protect } from "../../middleware/authMiddleware";
+import pool from "../../config/db";
 
 export const getCompanyRequirementsList = async (req, res) => {
   try {
@@ -73,7 +73,7 @@ export const getAllUsersList = async (req, res) => {
     // 1️⃣ Check if user is admin
     const userResult = await pool.query(
       `SELECT id, role FROM users WHERE id = $1`,
-      [login_id],
+      [login_id]
     );
 
     if (userResult.rowCount === 0) {
@@ -84,7 +84,7 @@ export const getAllUsersList = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Admin only." });
     }
 
-    // 2️⃣ Fetch all users
+    // 2️⃣ Fetch all users (✅ includes status)
     const usersResult = await pool.query(`
       SELECT 
         id,
@@ -92,6 +92,7 @@ export const getAllUsersList = async (req, res) => {
         email,
         role,
         company_name,
+        status,
         created_at
       FROM users
       ORDER BY created_at DESC
@@ -103,6 +104,7 @@ export const getAllUsersList = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 export const getBidsForAdmin = async (req: Request, res: Response) => {
   try {
@@ -204,7 +206,6 @@ export const getAllWarehousesList = async (
   }
 };
 
-
 export const getRetailListAdmin = async (req: Request, res: Response) => {
   const { login_id } = req.query;
 
@@ -276,5 +277,91 @@ export const getRetailListAdmin = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ error: "Internal server error", details: err.message });
+  }
+};
+
+export const getAllPitchesAdmin = async (req: Request, res: Response) => {
+  const { pitch_id, login_id } = req.query;
+
+  if (!login_id) {
+    return res.status(400).json({ error: "login_id is required" });
+  }
+
+  try {
+    // 1. Check user role
+    const userResult = await pool.query(
+      `SELECT id, role FROM users WHERE id = $1`,
+      [login_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+    if (user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied. Admins only." });
+    }
+
+    // 2. Fetch pitches
+    let query = `SELECT * FROM pitches`;
+    const values: any[] = [];
+
+    if (pitch_id) {
+      query += ` WHERE id = $1`; // use pitch id if provided
+      values.push(pitch_id);
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    const result = await pool.query(query, values);
+
+    res.status(200).json({ pitches: result.rows });
+  } catch (err: any) {
+    console.error("Error fetching pitches:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getAllRetailPitches = async (req: Request, res: Response) => {
+  const { login_id } = req.query;
+
+  if (!login_id) {
+    return res.status(400).json({ error: "login_id is required" });
+  }
+
+  try {
+    // 🔹 1. Check user role
+    const userResult = await pool.query(
+      `SELECT id, role FROM users WHERE id = $1`,
+      [login_id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    // 🔹 2. Build query based on role
+    let query = `SELECT * FROM retail_pitches`;
+    const values: any[] = [];
+
+    if (user.role !== "admin") {
+      query += ` WHERE login_id = $1`;
+      values.push(login_id);
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    // 🔹 3. Execute query
+    const result = await pool.query(query, values);
+
+    res.status(200).json({
+      retail_pitches: result.rows,
+    });
+  } catch (err: any) {
+    console.error("Error fetching retail pitches:", err);
+    res.status(500).json({ error: err.message });
   }
 };

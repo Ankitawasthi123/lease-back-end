@@ -30,6 +30,7 @@ class User extends Model {
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+  public status!: string | null;
 }
 
 User.init(
@@ -61,6 +62,8 @@ User.init(
     mobile_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     profile_image: { type: DataTypes.STRING, allowNull: true },
+    status: { type: DataTypes.STRING, allowNull: true },
+
 
     
   },
