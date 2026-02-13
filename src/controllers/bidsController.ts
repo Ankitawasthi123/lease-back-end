@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { Bid, CompanyRequirements } from "../models";
+import { Op } from "sequelize";
+import { Bid, CompanyRequirements, User } from "../models";
 
 export const createBid = async (req: Request, res: Response) => {
   try {
@@ -70,17 +71,76 @@ export const getBidsForUserAndCompany = async (req: Request, res: Response) => {
     const { login_id, company_id } = req.body;
     console.log("Fetching bids for login_id:", login_id, "company_id:", company_id);
 
-    if (!login_id || !company_id) {
-      return res
-        .status(400)
-        .json({ message: "login_id and company_id are required" });
+    if (!login_id || isNaN(Number(login_id))) {
+      return res.status(400).json({ message: "login_id must be a valid number" });
     }
 
-    const bids = await Bid.findAll({
-      where: {
-        requirement_id: company_id,
-      },
-    });
+    const loginIdNum = Number(login_id);
+    const user = await User.findByPk(loginIdNum);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let bids: any[] = [];
+
+    if (user.role !== "company") {
+      if (!company_id || isNaN(Number(company_id))) {
+        return res
+          .status(400)
+          .json({ message: "company_id must be a valid number" });
+      }
+
+      const companyIdNum = Number(company_id);
+      const requirements = await CompanyRequirements.findAll({
+        where: {
+          company_id: companyIdNum,
+        },
+      });
+
+      const requirementIds = requirements.map((req: any) => req.id);
+      const requirementsById = new Map(
+        requirements.map((req: any) => [req.id, req.toJSON()])
+      );
+
+      if (requirementIds.length === 0) {
+        return res.status(200).json({ bids: [] });
+      }
+
+      const allBids = await Bid.findAll({
+        where: {
+          requirement_id: { [Op.in]: requirementIds },
+        },
+        order: [["created_date", "DESC"]],
+      });
+      bids = allBids.filter((b: any) => b.pl_details?.id === loginIdNum);
+
+      return res.status(200).json({
+        bids: bids.map((b: any) => {
+          const bidJson = b.toJSON();
+          const requirement = requirementsById.get(bidJson.requirement_id);
+          return {
+            ...bidJson,
+            company_id: requirement?.company_id ?? null,
+            company_name: requirement?.bid_details?.company_name ?? null,
+          };
+        }),
+      });
+    } else {
+      if (!company_id || isNaN(Number(company_id))) {
+        return res
+          .status(400)
+          .json({ message: "company_id must be a valid number" });
+      }
+
+      const companyIdNum = Number(company_id);
+      bids = await Bid.findAll({
+        where: {
+          requirement_id: companyIdNum,
+        },
+        order: [["created_date", "DESC"]],
+      });
+    }
 
     return res.status(200).json({
       bids: bids.map(b => b.toJSON()),

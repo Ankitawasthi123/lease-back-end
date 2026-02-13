@@ -312,15 +312,31 @@ export const getAllWarehousesThreePlList = async (
 
   try {
     let where: any = {};
+    const loginIdNum = cleanLoginId && !isNaN(Number(cleanLoginId))
+      ? Number(cleanLoginId)
+      : null;
+    let returnSelfAndCompanies = Boolean(cleanLoginId && !cleanCompanyId);
 
     // CASE 1: First load → approved only
     if (!cleanLoginId) {
       where.status = { [Op.iLike]: 'approved' };
     }
 
-    // CASE 2: login_id present BUT no company_id → show ONLY approved requests
+    // CASE 2: login_id present BUT no company_id → self + company-owned warehouses
     if (cleanLoginId && !cleanCompanyId) {
-      where.status = { [Op.iLike]: 'approved' };
+      if (!loginIdNum) {
+        return sendErrorResponse(res, 400, "login_id must be a valid number");
+      }
+
+      const user = await User.findByPk(loginIdNum);
+      if (!user) {
+        return sendErrorResponse(res, 404, "User not found");
+      }
+
+      if (user.role === "owner" || user.role === "agent") {
+        where.status = { [Op.iLike]: "approved" };
+        returnSelfAndCompanies = false;
+      }
     }
 
     // CASE 3: login_id + company_id present
@@ -354,6 +370,35 @@ export const getAllWarehousesThreePlList = async (
       order: [["id", "DESC"]],
     });
 
+    if (returnSelfAndCompanies && loginIdNum) {
+      const loginIds = Array.from(
+        new Set(warehouses.map((row: any) => row.login_id).filter(Boolean))
+      );
+
+      if (loginIds.length === 0) {
+        return res.status(200).json({ success: true, warehouses: [] });
+      }
+
+      const companyUsers = await User.findAll({
+        where: { id: { [Op.in]: loginIds }, role: "company" },
+        attributes: ["id"],
+      });
+
+      const companyUserIds = new Set(
+        companyUsers.map((u: any) => Number(u.id))
+      );
+
+      const filteredWarehouses = warehouses.filter((row: any) => {
+        const ownerId = Number(row.login_id);
+        return ownerId === loginIdNum || companyUserIds.has(ownerId);
+      });
+
+      return res.status(200).json({
+        success: true,
+        warehouses: filteredWarehouses.map((w: any) => w.toJSON()),
+      });
+    }
+
     return res.status(200).json({
       success: true,
       warehouses: warehouses.map(w => w.toJSON()),
@@ -375,48 +420,74 @@ export const getWarehouseCompanyList = async (req: Request, res: Response) => {
       return sendErrorResponse(res, 401, "User not authenticated");
     }
 
-    // Fetch logged-in user's company_details
-    const userWarehouse = await Warehouse.findOne({
-      where: { login_id: Number(login_id) },
-      attributes: ['company_details'],
-    });
-
-    let userCompanyDetails: any = {};
-    if (userWarehouse && userWarehouse.company_details) {
-      userCompanyDetails = userWarehouse.company_details;
+    if (isNaN(Number(login_id))) {
+      return sendErrorResponse(res, 400, "login_id must be a valid number");
     }
 
-    const companyDetailId = userCompanyDetails?.id != null
-      ? String(userCompanyDetails.id)
-      : null;
-
-    // Build base query
-    let where: any = {};
-
-    // Apply rules
-    if (companyDetailId && companyDetailId === login_id) {
-      // Case 1: company id matches → return all warehouses
-      // no extra filter
-    } else {
-      // Case 2 & 3: company id is null or does not match → return approved warehouses
-      console.log("Fetching only approved warehouses because company id is null or doesn't match");
-      where.status = "approved";
+    const user = await User.findByPk(Number(login_id));
+    if (!user) {
+      return sendErrorResponse(res, 404, "User not found");
     }
 
-    // Execute query
     const warehouses = await Warehouse.findAll({
-      where,
-      attributes: ['login_id', 'company_details', 'status'],
-      order: [['login_id', 'ASC']],
+      attributes: ["login_id", "company_details", "status"],
+      order: [["login_id", "ASC"]],
     });
 
     if (!warehouses.length) {
       return res.status(200).json({ success: true, data: [] });
     }
 
+    const loginIds = Array.from(
+      new Set(warehouses.map((row: any) => row.login_id).filter(Boolean))
+    );
+
+    if (loginIds.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const allowedRoles = user.role === "owner" || user.role === "agent"
+      ? ["company", "threepl"]
+      : ["company"];
+
+    const allowedUsers = await User.findAll({
+      where: {
+        id: { [Op.in]: loginIds },
+        role: { [Op.in]: allowedRoles },
+      },
+      attributes: ["id"],
+    });
+
+    const allowedUserIds = new Set(
+      allowedUsers.map((u: any) => Number(u.id))
+    );
+
+    const allowedWarehouses = warehouses.filter((row: any) =>
+      allowedUserIds.has(Number(row.login_id))
+    );
+
+    if (user.role !== "owner" && user.role !== "agent") {
+      const loginIdNum = Number(login_id);
+      const hasSelf = allowedWarehouses.some(
+        (row: any) => Number(row.login_id) === loginIdNum
+      );
+      if (!hasSelf) {
+        const ownWarehouse = warehouses.find(
+          (row: any) => Number(row.login_id) === loginIdNum
+        );
+        if (ownWarehouse) {
+          allowedWarehouses.push(ownWarehouse);
+        }
+      }
+    }
+
+    if (!allowedWarehouses.length) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
     // Normalize response and remove duplicates
     const seenLoginIds = new Set<number>();
-    const data = warehouses
+    const data = allowedWarehouses
       .map((row: any) => {
         let companyDetailsObj: any = row.company_details || {};
 
@@ -462,25 +533,38 @@ export const getAllWarehousesList = async (
 
     // Ownership + approval logic
     if (cleanLoginId) {
-      where[Op.or] = [
-        // User's own warehouses
-        sequelize.where(
-          sequelize.cast(sequelize.col('company_details'), 'text'),
-          Op.like,
-          `%"id": ${cleanLoginId}%`
-        ),
-        // Other's approved warehouses
-        {
-          [Op.and]: [
-            sequelize.where(
-              sequelize.cast(sequelize.col('company_details'), 'text'),
-              Op.notLike,
-              `%"id": ${cleanLoginId}%`
-            ),
-            { status: { [Op.iLike]: 'approved' } },
-          ],
-        },
-      ];
+      if (isNaN(Number(cleanLoginId))) {
+        return sendErrorResponse(res, 400, "login_id must be a valid number");
+      }
+
+      const user = await User.findByPk(Number(cleanLoginId));
+      if (!user) {
+        return sendErrorResponse(res, 404, "User not found");
+      }
+
+      if (user.role === "company") {
+        where.login_id = Number(cleanLoginId);
+      } else {
+        where[Op.or] = [
+          // User's own warehouses
+          sequelize.where(
+            sequelize.cast(sequelize.col('company_details'), 'text'),
+            Op.like,
+            `%%"id": ${cleanLoginId}%`
+          ),
+          // Other's approved warehouses
+          {
+            [Op.and]: [
+              sequelize.where(
+                sequelize.cast(sequelize.col('company_details'), 'text'),
+                Op.notLike,
+                `%%"id": ${cleanLoginId}%`
+              ),
+              { status: { [Op.iLike]: 'approved' } },
+            ],
+          },
+        ];
+      }
     }
 
     // Location filter
