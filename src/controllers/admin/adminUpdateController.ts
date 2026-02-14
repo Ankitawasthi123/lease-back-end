@@ -2,21 +2,19 @@ import { Request, Response } from "express";
 import { protect } from "../../middleware/authMiddleware";
 import pool from "../../config/db";
 
+const normalizeReason = (reason?: string) => {
+  return typeof reason === "string" && reason.trim() !== "" ? reason.trim() : null;
+};
+
 export const updateCompanyRequirementStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, requirement_id, status, reason } = req.body;
+    const normalizedReason = normalizeReason(reason);
 
     // 1️⃣ Validate inputs
     if (!login_id || !requirement_id || !status) {
       return res.status(400).json({
         error: "login_id, requirement_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -50,7 +48,7 @@ export const updateCompanyRequirementStatus = async (req: Request, res: Response
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, requirement_id]
+        [status, normalizedReason, requirement_id]
       );
     } else {
       updateResult = await pool.query(
@@ -86,18 +84,12 @@ export const updateCompanyRequirementStatus = async (req: Request, res: Response
 export const updateWarehouseStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, warehouse_id, status, reason } = req.body;
+    const normalizedReason = normalizeReason(reason);
 
     // ✅ Validate input
     if (!login_id || !warehouse_id || !status) {
       return res.status(400).json({
         error: "login_id, warehouse_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -131,7 +123,7 @@ export const updateWarehouseStatus = async (req: Request, res: Response) => {
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, warehouse_id]
+        [status, normalizedReason, warehouse_id]
       );
     } else {
       updateResult = await pool.query(
@@ -166,19 +158,13 @@ export const updateWarehouseStatus = async (req: Request, res: Response) => {
 export const updatePitchStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, pitch_id, status, reason } = req.body;
+    const normalizedReason = normalizeReason(reason);
 
     /* ================= VALIDATION ================= */
 
     if (!login_id || !pitch_id || !status) {
       return res.status(400).json({
         error: "login_id, pitch_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -212,7 +198,7 @@ export const updatePitchStatus = async (req: Request, res: Response) => {
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, pitch_id],
+        [status, normalizedReason, pitch_id],
       );
     } else {
       updateResult = await pool.query(
@@ -247,17 +233,11 @@ export const updatePitchStatus = async (req: Request, res: Response) => {
 export const updateRetailStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, retail_id, status, reason } = req.body;
+    const normalizedReason = normalizeReason(reason);
 
     if (!login_id || !retail_id || !status) {
       return res.status(400).json({
         error: "login_id, retail_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -289,7 +269,7 @@ export const updateRetailStatus = async (req: Request, res: Response) => {
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, retail_id]
+        [status, normalizedReason, retail_id]
       );
     } else {
       updateResult = await pool.query(
@@ -322,17 +302,10 @@ export const updateRetailStatus = async (req: Request, res: Response) => {
 export const updateRetailPitchStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, retail_pitch_id, status, reason } = req.body;
-
+    const normalizedReason = normalizeReason(reason);
     if (!login_id || !retail_pitch_id || !status) {
       return res.status(400).json({
         error: "login_id, retail_pitch_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -364,7 +337,7 @@ export const updateRetailPitchStatus = async (req: Request, res: Response) => {
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, retail_pitch_id]
+        [status, normalizedReason, retail_pitch_id]
       );
     } else {
       updateResult = await pool.query(
@@ -397,18 +370,12 @@ export const updateRetailPitchStatus = async (req: Request, res: Response) => {
 export const updateBidStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, bid_id, status, reason } = req.body;
+    const normalizedReason = normalizeReason(reason);
 
     // ✅ Validate input
     if (!login_id || !bid_id || !status) {
       return res.status(400).json({
         error: "login_id, bid_id, and status are required",
-      });
-    }
-
-    // Validate reason if status is "returned"
-    if (status === "returned" && !reason) {
-      return res.status(400).json({
-        error: "reason is required when status is 'returned'",
       });
     }
 
@@ -440,7 +407,7 @@ export const updateBidStatus = async (req: Request, res: Response) => {
         WHERE id = $3
         RETURNING *
         `,
-        [status, reason, bid_id]
+        [status, normalizedReason, bid_id]
       );
     } else {
       updateResult = await pool.query(
@@ -473,7 +440,6 @@ export const updateBidStatus = async (req: Request, res: Response) => {
 export const updateUserStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, user_id: target_user_id, status } = req.body;
-    console.log("🛠 UPDATE USER STATUS INPUT==========================================:", req.body,login_id, target_user_id, status);
 
     // ✅ Validate input
     if (!login_id || !target_user_id || !status) {

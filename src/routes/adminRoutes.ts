@@ -9,6 +9,7 @@ import {
   getAllWarehousesList,
   getRetailListAdmin,
   getAllPitchesAdmin,
+  getAllRetailPitches,
 } from "../controllers/admin/adminListController";
 
 import {
@@ -71,12 +72,12 @@ router.get("/bid-list", protect, getBidsForAdmin);
 router.get("/warehouse-list", protect, getAllWarehousesList);
 router.get("/retail-list", protect, getRetailListAdmin);
 router.get("/warehouse-pitches", protect, getAllPitchesAdmin);
-router.get("/retail-pitches", protect, getAllPitchesAdmin);
+router.get("/retail-pitches", protect, getAllRetailPitches);
 router.put("/company-requirements/status", protect, updateCompanyRequirementStatus);
 router.put("/warehouse/status", protect, updateWarehouseStatus);
 router.put("/pitches/status", protect, updatePitchStatus);
 router.put("/retails/status", protect, updateRetailStatus);
-router.put("/retail-piches/status", protect, updateRetailPitchStatus);
+router.put("/retail-pitches/status", protect, updateRetailPitchStatus);
 router.put("/bids/status", protect, updateBidStatus);
 router.put("/users/status", protect, updateUserStatus);
 

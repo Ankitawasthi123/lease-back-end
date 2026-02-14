@@ -89,6 +89,7 @@ export const getAllUsersList = async (req: Request, res: Response) => {
       SELECT 
         id,
         first_name,
+        last_name,
         email,
         role,
         company_name,
@@ -307,7 +308,7 @@ export const getAllPitchesAdmin = async (req: Request, res: Response) => {
     }
 
     // 2. Fetch pitches
-    let query = `SELECT * FROM retail_pitches`;
+    let query = `SELECT * FROM pitches`;
     const values: any[] = [];
 
     if (pitch_id) {
