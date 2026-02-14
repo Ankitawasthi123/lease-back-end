@@ -105,7 +105,6 @@ export const getAllUsersList = async (req: Request, res: Response) => {
   }
 };
 
-
 export const getBidsForAdmin = async (req: Request, res: Response) => {
   try {
     const login_id = parseInt(req.query.login_id as string, 10);
@@ -130,14 +129,17 @@ export const getBidsForAdmin = async (req: Request, res: Response) => {
     const result = await pool.query(
       `
       SELECT 
-        *,
+        b.*,
+        cr.company_id,
         COALESCE(
-          bid_details->>'companyName',
-          bid_details->'company'->>'name', 
-          bid_details->>'company_name'
+          b.bid_details->>'companyName',
+          b.bid_details->'company'->>'name', 
+          b.bid_details->>'company_name'
         ) AS company_name
-      FROM bids 
-      ORDER BY id DESC
+      FROM bids b
+      LEFT JOIN company_requirements cr
+        ON cr.id = b.requirement_id
+      ORDER BY b.id DESC
     `,
       [],
     ); // No parameters needed
@@ -180,7 +182,7 @@ export const getAllWarehousesList = async (
 
     // Fetch all warehouses
     const result = await pool.query(`
-      SELECT id, warehouse_location, status, created_date
+      SELECT id, warehouse_location, status, created_date, login_id
       FROM warehouse
       ORDER BY id DESC
     `);
@@ -196,6 +198,7 @@ export const getAllWarehousesList = async (
       warehouses: result.rows,
       total: result.rowCount,
       statusCount: statusCount.rows,
+      login_id: cleanLoginId,
     });
   } catch (err: any) {
     console.error("Error fetching warehouses:", err);
@@ -304,7 +307,7 @@ export const getAllPitchesAdmin = async (req: Request, res: Response) => {
     }
 
     // 2. Fetch pitches
-    let query = `SELECT * FROM pitches`;
+    let query = `SELECT * FROM retail_pitches`;
     const values: any[] = [];
 
     if (pitch_id) {
