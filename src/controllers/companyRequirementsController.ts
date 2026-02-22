@@ -26,6 +26,10 @@ export const createRequirement = async (req: Request, res: Response) => {
     return sendErrorResponse(res, 400, "company_id is required");
   }
 
+  if (!requirement_type) {
+    return sendErrorResponse(res, 400, "requirement_type is required");
+  }
+
   try {
     const requirement = await CompanyRequirements.create({
       warehouse_location: warehouse_location || {},
@@ -140,7 +144,6 @@ export const getCompanyList = async (req: Request, res: Response) => {
   try {
     const login_id = req.user?.login_id || req.user?.id;
     const numericLoginId = login_id ? Number(login_id) : null;
-
     if (!numericLoginId) {
       return sendErrorResponse(res, 401, "User not authenticated");
     }

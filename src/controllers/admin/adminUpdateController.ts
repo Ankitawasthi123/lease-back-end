@@ -6,6 +6,10 @@ const normalizeReason = (reason?: string) => {
   return typeof reason === "string" && reason.trim() !== "" ? reason.trim() : null;
 };
 
+const shouldSetReason = (status: string) => {
+  return status === "returned" || status === "rejected";
+};
+
 export const updateCompanyRequirementStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, requirement_id, status, reason } = req.body;
@@ -38,7 +42,7 @@ export const updateCompanyRequirementStatus = async (req: Request, res: Response
 
     // 3️⃣ Update requirement status (and return_reason if applicable)
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE company_requirements
@@ -113,7 +117,7 @@ export const updateWarehouseStatus = async (req: Request, res: Response) => {
 
     // 3️⃣ Update warehouse status (and return_reason if applicable)
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE warehouse
@@ -188,7 +192,7 @@ export const updatePitchStatus = async (req: Request, res: Response) => {
     /* ================= UPDATE PITCH ================= */
 
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE pitches
@@ -259,7 +263,7 @@ export const updateRetailStatus = async (req: Request, res: Response) => {
 
     // Update retail status (and return_reason if applicable)
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE retail
@@ -327,7 +331,7 @@ export const updateRetailPitchStatus = async (req: Request, res: Response) => {
 
     // Update retail pitch status (and return_reason if applicable)
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE retail_pitches
@@ -397,7 +401,7 @@ export const updateBidStatus = async (req: Request, res: Response) => {
 
     // ✅ Update bid status (and return_reason if applicable)
     let updateResult;
-    if (status === "returned") {
+    if (shouldSetReason(status)) {
       updateResult = await pool.query(
         `
         UPDATE bids

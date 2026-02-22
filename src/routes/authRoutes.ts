@@ -43,7 +43,18 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    if (file.fieldname === "profile_image") {
+      const allowedTypes = ["image/png", "image/jpeg", "image/gif"];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error("Unsupported profile image type"));
+      }
+    }
+    return cb(null, true);
+  },
+});
 
 // ---------------- Middleware ----------------
 
