@@ -16,7 +16,7 @@ class User extends Model {
   public company_info!: object | null;
   public registered_address!: object | null;
   public communication_address!: object | null;
-  public director_info!: object | null;
+  public director_info!: object[] | null;
   public filler_info!: object | null;
 
   // ✅ OTP fields
@@ -52,7 +52,7 @@ User.init(
     company_info: { type: DataTypes.JSONB, allowNull: true },
     registered_address: { type: DataTypes.JSONB, allowNull: true },
     communication_address: { type: DataTypes.JSONB, allowNull: true },
-    director_info: { type: DataTypes.JSONB, allowNull: true },
+    director_info: { type: DataTypes.ARRAY(DataTypes.JSONB), allowNull: true },
     filler_info: { type: DataTypes.JSONB, allowNull: true },
 
     // ✅ Add these OTP fields

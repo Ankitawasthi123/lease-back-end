@@ -4,7 +4,7 @@ import sequelize from "../config/data-source";
 class Retail extends Model {
   public id!: number;
   public login_id!: number;
-  public retail_details!: string;
+  public retail_details!: object;
   public retail_type!: any[];
   public retail_compliance!: object;
   public status!: string;
@@ -25,8 +25,9 @@ Retail.init(
       allowNull: false,
     },
     retail_details: {
-      type: DataTypes.STRING,
+      type: DataTypes.JSONB,
       allowNull: true,
+      defaultValue: {},
     },
     retail_type: {
       type: DataTypes.JSONB,
