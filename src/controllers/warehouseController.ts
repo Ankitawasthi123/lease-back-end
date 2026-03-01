@@ -107,27 +107,28 @@ export const getWarehouseById = async (
 
     // Payment check only for other user's warehouse
     if (!isSelfWarehouse) {
-      const latestPayment = await Payment.findOne({
+      const payments = await Payment.findAll({
         where: { user_id: requesterUserId },
         order: [["updated_at", "DESC"], ["created_at", "DESC"]],
       });
 
-      if (!latestPayment) {
+      if (!payments.length) {
         return res.status(200).json({
           success: false,
           message: "Payment not done",
         });
       }
 
-      const paymentStatus = String(latestPayment.status || "")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "");
-      const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(
-        paymentStatus
-      );
-      const isPaymentSuccessful =
-        !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
+      const isPaymentSuccessful = payments.some((payment: any) => {
+        const paymentStatus = String(payment?.status || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "");
+        const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(
+          paymentStatus
+        );
+        return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
+      });
 
       if (!isPaymentSuccessful) {
         return res.status(200).json({

@@ -11,25 +11,23 @@ const hasSuccessfulPayment = async (userIds: number[]): Promise<boolean> => {
     return false;
   }
 
-  const payments = await Payment.findAll({
+  const latestPayment = await Payment.findOne({
     where: {
       user_id: { [Op.in]: cleanUserIds },
     },
     order: [["updated_at", "DESC"], ["created_at", "DESC"]],
   });
 
-  if (!payments.length) {
+  if (!latestPayment) {
     return false;
   }
 
-  return payments.some((payment: any) => {
-    const paymentStatus = String(payment?.status || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "");
-    const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(paymentStatus);
-    return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
-  });
+  const paymentStatus = String(latestPayment?.status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(paymentStatus);
+  return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
 };
 
 // ✅ CREATE Retail
@@ -115,8 +113,9 @@ export const getRetailById = async (req: Request, res: Response) => {
 
     const requesterUserId = Number(login_id);
     const isSelfRetail = Number(retail.login_id) === requesterUserId;
+    const isCompanySelfRetail = user.role === "company" && isSelfRetail;
 
-    if (!isSelfRetail) {
+    if (!isCompanySelfRetail) {
       const paymentDone = await hasSuccessfulPayment([requesterUserId]);
       if (!paymentDone) {
         return res.status(200).json({

@@ -439,8 +439,77 @@ export const liveBids = async (req: Request, res: Response) => {
       return res.status(200).json({ success: true, data: [] });
     }
 
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+
+    const parseBidProcessDateTime = (bidDetails: any): Date | null => {
+      const rawDate = bidDetails?.bid_process_date ?? bidDetails?.bidProcessDate;
+      const rawTime = bidDetails?.bid_process_time ?? bidDetails?.bidProcessTime;
+
+      if (!rawDate) {
+        return null;
+      }
+
+      const datePart = String(rawDate).trim();
+      const baseDate = new Date(`${datePart}T00:00:00`);
+      if (isNaN(baseDate.getTime())) {
+        return null;
+      }
+
+      if (!rawTime) {
+        return baseDate;
+      }
+
+      const rawTimeText = String(rawTime).trim();
+      let timeText = rawTimeText.toUpperCase();
+      const isMeridianTime = /(AM|PM)$/.test(timeText);
+
+      if (isMeridianTime) {
+        const meridian = timeText.endsWith("PM") ? "PM" : "AM";
+        timeText = timeText.replace(/\s*(AM|PM)\s*$/, "");
+        const [hourStr, minuteStr = "0"] = timeText.split(":");
+        let hour = Number(hourStr);
+        const minute = Number(minuteStr);
+
+        if (Number.isNaN(hour) || Number.isNaN(minute)) {
+          return null;
+        }
+
+        if (meridian === "PM" && hour < 12) hour += 12;
+        if (meridian === "AM" && hour === 12) hour = 0;
+
+        baseDate.setHours(hour, minute, 0, 0);
+        return baseDate;
+      }
+
+      const [hourStr, minuteStr = "0"] = timeText.split(":");
+      const hour = Number(hourStr);
+      const minute = Number(minuteStr);
+      if (Number.isNaN(hour) || Number.isNaN(minute)) {
+        return null;
+      }
+
+      baseDate.setHours(hour, minute, 0, 0);
+      return baseDate;
+    };
+
+    const todayStartedRequirements = requirements.filter((r: any) => {
+      const processDateTime = parseBidProcessDateTime(r.bid_details || {});
+      if (!processDateTime) {
+        return false;
+      }
+      return processDateTime >= todayStart && processDateTime < tomorrowStart && processDateTime <= now;
+    });
+
+    if (todayStartedRequirements.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
     // Collect requirement IDs
-    const requirementIds = requirements.map((r: any) => r.id);
+    const requirementIds = todayStartedRequirements.map((r: any) => r.id);
 
     // Fetch bids
     let bids: any[] = [];
@@ -464,7 +533,7 @@ export const liveBids = async (req: Request, res: Response) => {
     }
 
     // Attach bids to requirements
-    const enrichedRequirements = requirements
+    const enrichedRequirements = todayStartedRequirements
       .map((req: any) => {
         const reqBids = bids.filter((bid: any) => bid.requirement_id === req.id);
 
