@@ -6,7 +6,6 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import hpp from 'hpp';
-import xss from 'xss-clean';
 import config from './config/env';
 import userRoutes from './routes/userRoutes';
 import authRoutes from './routes/authRoutes';
@@ -21,7 +20,6 @@ app.use(cookieParser());
 
 // Security middlewares
 app.use(helmet());
-app.use(xss());
 app.use(hpp());
 
 // Basic rate limiting

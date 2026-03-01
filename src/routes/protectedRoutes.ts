@@ -63,6 +63,7 @@ import {
   updateRetailPitch,
   getRetailPitchCompanyList,
 } from "../controllers/retailPitchesController";
+import { createPayment } from "../controllers/paymentController";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -200,5 +201,7 @@ router.get(
   getRetailPitchesForUser,
 );
 router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
+
+router.post("/payment/create-payment", protect, createPayment);
 
 export default router;

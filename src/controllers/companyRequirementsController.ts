@@ -1,6 +1,6 @@
 import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
-import { CompanyRequirements, Bid, User } from "../models";
+import { CompanyRequirements, Bid, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
@@ -191,7 +191,7 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
     return sendErrorResponse(res, 405, `Method ${req.method} not allowed`);
   }
 
-  const { id, company_id, role } = req.body;
+  const { id, company_id, login_id, user_id, role } = req.body;
   if (!id || !company_id) {
     return sendErrorResponse(res, 400, "id and company_id are required");
   }
@@ -203,9 +203,70 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
   }
 
   try {
+    const requesterUserIdCandidates = [
+      login_id,
+      user_id,
+      req.user?.id,
+      req.user?.login_id,
+      req.user?.userId,
+      companyId,
+    ]
+      .map((value) => Number(value))
+      .filter((value, index, arr) => Number.isFinite(value) && value > 0 && arr.indexOf(value) === index);
+
+    const requesterUserId = requesterUserIdCandidates[0] || NaN;
+
+    let roleValue = String(role || req.user?.role || "").toLowerCase();
+    if (!roleValue && requesterUserId && !isNaN(requesterUserId)) {
+      const requesterUser = await User.findByPk(requesterUserId);
+      roleValue = String(requesterUser?.role || "").toLowerCase();
+    }
+    const isThreePlRole = ["threepl", "3pl", "three_pl"].includes(roleValue);
+
+    if (isThreePlRole) {
+      if (requesterUserIdCandidates.length === 0) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
+
+      const payments = await Payment.findAll({
+        where: {
+          user_id: { [Op.in]: requesterUserIdCandidates },
+        },
+        order: [["updated_at", "DESC"], ["created_at", "DESC"]],
+      });
+
+      if (!payments.length) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
+
+      const hasSuccessfulPayment = payments.some((payment: any) => {
+        const paymentStatus = String(payment?.status || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "");
+        const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(
+          paymentStatus
+        );
+        return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
+      });
+
+      if (!hasSuccessfulPayment) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
+    }
+
     // Fetch the requirement
     let requirement;
-    if (role === "threepl") {
+    if (isThreePlRole) {
       requirement = await CompanyRequirements.findByPk(requirementId);
     } else {
       requirement = await CompanyRequirements.findOne({
@@ -224,9 +285,9 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
 
     let filteredBids = bids;
     // If the user is a 3PL, only keep their own bid details
-    if (role === "threepl" && company_id) {
+    if (isThreePlRole && requesterUserId) {
       filteredBids = bids.map((bid: any) => {
-        if (bid.pl_details?.id === company_id) {
+        if (Number(bid.pl_details?.id) === requesterUserId) {
           return bid.toJSON();
         } else {
           return {

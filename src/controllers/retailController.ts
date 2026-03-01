@@ -1,9 +1,36 @@
 import { Router, Request, Response } from "express";
 import { protect } from "../middleware/authMiddleware";
-import { Retail, RetailPitch, User } from "../models";
+import { Retail, RetailPitch, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
+
+const hasSuccessfulPayment = async (userIds: number[]): Promise<boolean> => {
+  const cleanUserIds = userIds.filter((value, index, arr) => Number.isFinite(value) && value > 0 && arr.indexOf(value) === index);
+  if (cleanUserIds.length === 0) {
+    return false;
+  }
+
+  const payments = await Payment.findAll({
+    where: {
+      user_id: { [Op.in]: cleanUserIds },
+    },
+    order: [["updated_at", "DESC"], ["created_at", "DESC"]],
+  });
+
+  if (!payments.length) {
+    return false;
+  }
+
+  return payments.some((payment: any) => {
+    const paymentStatus = String(payment?.status || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+    const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(paymentStatus);
+    return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
+  });
+};
 
 // ✅ CREATE Retail
 export const createRetail = async (req: Request, res: Response) => {
@@ -84,6 +111,19 @@ export const getRetailById = async (req: Request, res: Response) => {
     const user = await User.findByPk(Number(login_id));
     if (!user) {
       return sendErrorResponse(res, 404, "User not found");
+    }
+
+    const requesterUserId = Number(login_id);
+    const isSelfRetail = Number(retail.login_id) === requesterUserId;
+
+    if (!isSelfRetail) {
+      const paymentDone = await hasSuccessfulPayment([requesterUserId]);
+      if (!paymentDone) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
     }
 
     if (pitches.length > 0) {
@@ -290,14 +330,29 @@ export const getAllRetailsByLocation = async (req: Request, res: Response) => {
 };
 
 export const getAllRetailsByCompany = async (req: Request, res: Response) => {
-  const { company_id } = req.query;
+  const { company_id, login_id } = req.query;
 
   try {
     let where: any = { status: "approved" };
 
+    const requesterUserIdRaw =
+      login_id ?? req.user?.id ?? req.user?.login_id ?? req.user?.userId;
+    const requesterUserId = Number(requesterUserIdRaw);
+
     // Optional filter by company_id
     if (company_id && company_id !== "all" && !isNaN(Number(company_id))) {
       const companyIdNum = Number(company_id);
+
+      if (Number.isFinite(requesterUserId) && requesterUserId > 0 && requesterUserId !== companyIdNum) {
+        const paymentDone = await hasSuccessfulPayment([requesterUserId]);
+        if (!paymentDone) {
+          return res.status(200).json({
+            success: false,
+            message: "Payment not done",
+          });
+        }
+      }
+
       // Filter by company_id in company_details JSON (cast JSONB to text first)
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push(

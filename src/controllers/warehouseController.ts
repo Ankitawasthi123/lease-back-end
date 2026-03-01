@@ -1,6 +1,6 @@
 import { Router, Request, Response, response } from "express";
 import { protect } from "../middleware/authMiddleware";
-import { Warehouse, Pitch, User } from "../models";
+import { Warehouse, Pitch, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
@@ -102,6 +102,40 @@ export const getWarehouseById = async (
     }
 
     const { role } = user.toJSON();
+    const requesterUserId = Number(login_id);
+    const isSelfWarehouse = Number(warehouse.login_id) === requesterUserId;
+
+    // Payment check only for other user's warehouse
+    if (!isSelfWarehouse) {
+      const latestPayment = await Payment.findOne({
+        where: { user_id: requesterUserId },
+        order: [["updated_at", "DESC"], ["created_at", "DESC"]],
+      });
+
+      if (!latestPayment) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
+
+      const paymentStatus = String(latestPayment.status || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+      const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(
+        paymentStatus
+      );
+      const isPaymentSuccessful =
+        !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(paymentStatus);
+
+      if (!isPaymentSuccessful) {
+        return res.status(200).json({
+          success: false,
+          message: "Payment not done",
+        });
+      }
+    }
 
     // 3️⃣ Build pitch query based on role
     let pitches: any[] = [];
