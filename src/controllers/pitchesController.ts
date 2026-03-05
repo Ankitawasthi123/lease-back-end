@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { Pitch, Warehouse } from "../models";
+import fs from "fs";
+import path from "path";
 
 /**
  * Helper: Send error response with proper status codes
@@ -39,6 +41,13 @@ export const createPitch = async (req: Request, res: Response) => {
       return sendErrorResponse(res, 400, "warehouse_id and login_id are required");
     }
 
+    const warehouseIdNum = Number(warehouse_id);
+    const loginIdNum = Number(login_id);
+
+    if (!Number.isFinite(warehouseIdNum) || !Number.isFinite(loginIdNum)) {
+      return sendErrorResponse(res, 400, "warehouse_id and login_id must be valid numbers");
+    }
+
     const safeParse = (val: any, fallback: any = {}) => {
       if (!val) return fallback;
       if (typeof val === "object") return val;
@@ -72,8 +81,8 @@ export const createPitch = async (req: Request, res: Response) => {
       : null;
 
     const pitch = await Pitch.create({
-      warehouse_id: Number(warehouse_id),
-      login_id: Number(login_id),
+      warehouse_id: warehouseIdNum,
+      login_id: loginIdNum,
       warehouse_location: warehouse_location ?? null,
       warehouse_size: warehouse_size ?? null,
       warehouse_compliance: parsedCompliance,
@@ -193,6 +202,18 @@ export const updatePitch = async (req: Request, res: Response) => {
       return sendErrorResponse(res, 400, "id and login_id are required");
     }
 
+    const pitchIdNum = Number(id);
+    const loginIdNum = Number(login_id);
+    const warehouseIdNum = Number(warehouse_id);
+
+    if (!Number.isFinite(pitchIdNum) || !Number.isFinite(loginIdNum)) {
+      return sendErrorResponse(res, 400, "id and login_id must be valid numbers");
+    }
+
+    if (warehouse_id !== undefined && warehouse_id !== null && warehouse_id !== "" && !Number.isFinite(warehouseIdNum)) {
+      return sendErrorResponse(res, 400, "warehouse_id must be a valid number");
+    }
+
     const safeParse = (val: any) => {
       if (!val) return null;
       if (typeof val === "object") return val;
@@ -206,9 +227,11 @@ export const updatePitch = async (req: Request, res: Response) => {
     // Check authorization
     const pitch = await Pitch.findOne({
       where: {
-        id: Number(id),
-        login_id: Number(login_id),
-        warehouse_id: Number(warehouse_id),
+        id: pitchIdNum,
+        login_id: loginIdNum,
+        ...(warehouse_id !== undefined && warehouse_id !== null && warehouse_id !== ""
+          ? { warehouse_id: warehouseIdNum }
+          : {}),
       },
     });
 
@@ -218,15 +241,99 @@ export const updatePitch = async (req: Request, res: Response) => {
 
     const files: any = req.files || {};
     const imageFiles = Array.isArray(files.images) ? files.images : [];
-    const uploadedImages =
-      imageFiles.length > 0
-        ? imageFiles.map((file: Express.Multer.File) => ({
-            filename: file.filename,
-            mimetype: file.mimetype,
-            size: file.size,
-            url: `/uploads/images/${file.filename}`,
-          }))
-        : pitch.image_files || [];
+    const formattedNewImages = imageFiles.map((file: Express.Multer.File) => ({
+      filename: file.filename,
+      mimetype: file.mimetype,
+      size: file.size,
+      url: `/uploads/images/${file.filename}`,
+    }));
+
+    const existingImages = Array.isArray(pitch.image_files)
+      ? pitch.image_files
+      : [];
+
+    const parseImageArray = (value: any): any[] | null => {
+      if (value === undefined || value === null) {
+        return null;
+      }
+
+      if (Array.isArray(value)) {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        if (!value.trim()) {
+          return null;
+        }
+
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+
+      return null;
+    };
+
+    const resolveImageFileName = (image: any): string | null => {
+      if (!image) {
+        return null;
+      }
+
+      if (typeof image === "string") {
+        return path.basename(image);
+      }
+
+      const candidate = image.filename || image.name || image.url;
+      if (!candidate || typeof candidate !== "string") {
+        return null;
+      }
+
+      return path.basename(candidate);
+    };
+
+    const retainedImagesInput =
+      req.body.image_files ??
+      req.body.retained_images ??
+      req.body.existing_images;
+
+    const retainedImages = parseImageArray(retainedImagesInput);
+    if (retainedImagesInput !== undefined && retainedImages === null) {
+      return sendErrorResponse(res, 400, "image_files must be a valid JSON array");
+    }
+
+    const keepFileNames = new Set(
+      (retainedImages || [])
+        .map((image: any) => resolveImageFileName(image))
+        .filter(Boolean),
+    );
+
+    const retainedExistingImages =
+      retainedImages === null
+        ? existingImages
+        : existingImages.filter((image: any) => keepFileNames.has(image?.filename));
+
+    const removedExistingImages =
+      retainedImages === null
+        ? []
+        : existingImages.filter(
+            (image: any) => image?.filename && !keepFileNames.has(image.filename),
+          );
+
+    await Promise.all(
+      removedExistingImages.map(async (image: any) => {
+        const imagePath = path.join("uploads", "images", image.filename);
+        try {
+          await fs.promises.unlink(imagePath);
+        } catch {
+          return;
+        }
+      }),
+    );
+
+    const finalImages = [...retainedExistingImages, ...formattedNewImages];
 
     const pdfFile = files.pdf_file?.[0];
     const pdfMeta = pdfFile
@@ -244,7 +351,7 @@ export const updatePitch = async (req: Request, res: Response) => {
       warehouse_compliance: safeParse(warehouse_compliance) || pitch.warehouse_compliance,
       material_details: safeParse(material_details) || pitch.material_details,
       justification: justification ?? pitch.justification,
-      image_files: uploadedImages,
+      image_files: finalImages,
       pdf_files: pdfMeta,
       rate_details: rate_details ?? pitch.rate_details,
       status: status ?? pitch.status,

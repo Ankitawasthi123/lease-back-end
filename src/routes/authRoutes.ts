@@ -16,6 +16,7 @@ import {
   verifyEmailOtp,
   refreshToken,
 } from "../controllers/authController";
+import { minifyUploadedImages } from "../middleware/imageCompression";
 
 // ---------------- Multer Configuration ----------------
 
@@ -93,8 +94,8 @@ router.post("/forgot-password", forgotPassword);
 router.post("/user-profile", getUserProfile);
 
 // Routes with file uploads
-router.post("/complete-profile", cpUpload, completeRegistration);
-router.post("/send-email-otp", cpUpload, sendOtpEmail);
+router.post("/complete-profile", cpUpload, minifyUploadedImages, completeRegistration);
+router.post("/send-email-otp", cpUpload, minifyUploadedImages, sendOtpEmail);
 
 router.post("/verify-email-otp", verifyEmailOtp);
 

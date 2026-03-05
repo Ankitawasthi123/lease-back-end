@@ -3,6 +3,8 @@ import { Retail, RetailPitch } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
+import fs from "fs";
+import path from "path";
 
 export const createRetailPitch = async (req: Request, res: Response) => {
   try {
@@ -223,7 +225,9 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
       return sendErrorResponse(res, 403, "You do not have permission to edit this pitch");
     }
 
-    const existingImages = pitch.image_files || [];
+    const existingImages = Array.isArray(pitch.image_files)
+      ? pitch.image_files
+      : [];
     const newUploadedImages = (req.files as any)?.images || [];
 
     const formattedNewImages = newUploadedImages.map(
@@ -235,7 +239,89 @@ export const updateRetailPitch = async (req: Request, res: Response) => {
       }),
     );
 
-    const finalImages = [...existingImages, ...formattedNewImages];
+    const parseImageArray = (value: any): any[] | null => {
+      if (value === undefined || value === null) {
+        return null;
+      }
+
+      if (Array.isArray(value)) {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        if (!value.trim()) {
+          return null;
+        }
+
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+
+      return null;
+    };
+
+    const resolveImageFileName = (image: any): string | null => {
+      if (!image) {
+        return null;
+      }
+
+      if (typeof image === "string") {
+        return path.basename(image);
+      }
+
+      const candidate = image.filename || image.name || image.url;
+      if (!candidate || typeof candidate !== "string") {
+        return null;
+      }
+
+      return path.basename(candidate);
+    };
+
+    const retainedImagesInput =
+      req.body.image_files ??
+      req.body.retained_images ??
+      req.body.existing_images;
+
+    const retainedImages = parseImageArray(retainedImagesInput);
+    if (retainedImagesInput !== undefined && retainedImages === null) {
+      return sendErrorResponse(
+        res,
+        400,
+        "image_files must be a valid JSON array",
+      );
+    }
+
+    const keepFileNames = new Set(
+      (retainedImages || [])
+        .map((image: any) => resolveImageFileName(image))
+        .filter(Boolean),
+    );
+
+    const retainedExistingImages = existingImages.filter((image: any) =>
+      keepFileNames.has(image?.filename),
+    );
+
+    const removedExistingImages = existingImages.filter(
+      (image: any) =>
+        image?.filename && !keepFileNames.has(image.filename),
+    );
+
+    await Promise.all(
+      removedExistingImages.map(async (image: any) => {
+        const imagePath = path.join("uploads", "images", image.filename);
+        try {
+          await fs.promises.unlink(imagePath);
+        } catch {
+          return;
+        }
+      }),
+    );
+
+    const finalImages = [...retainedExistingImages, ...formattedNewImages];
 
     const newPdfFile = (req.files as any)?.pdf_file?.[0];
 

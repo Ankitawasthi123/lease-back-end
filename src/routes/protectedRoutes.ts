@@ -64,6 +64,7 @@ import {
   getRetailPitchCompanyList,
 } from "../controllers/retailPitchesController";
 import { createPayment } from "../controllers/paymentController";
+import { minifyUploadedImages } from "../middleware/imageCompression";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -165,14 +166,15 @@ router.get("/retail/retail-user-location", protect, getUserRetailsLocation);
 router.put("/retail/update", protect, updateRetail);
 router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
-router.post("/pitch/create-pitch", protect, cpUpload, createPitch);
-router.put("/pitch/update-pitch", protect, cpUpload, updatePitch);
-router.put("/pitch/pitch-list", protect, cpUpload, getPitchesForUser);
-router.put("/pitch/delete", protect, cpUpload, deletePitch);
+router.post("/pitch/create-pitch", protect, cpUpload, minifyUploadedImages, createPitch);
+router.put("/pitch/update-pitch", protect, cpUpload, minifyUploadedImages, updatePitch);
+router.put("/pitch/pitch-list", protect, cpUpload, minifyUploadedImages, getPitchesForUser);
+router.put("/pitch/delete", protect, cpUpload, minifyUploadedImages, deletePitch);
 router.put(
   "/pitch/pitch-company-list",
   protect,
   cpUpload,
+  minifyUploadedImages,
   getWarehouseRequirementCompanyList,
 );
 router.get(
@@ -182,8 +184,8 @@ router.get(
 );
 router.get("/pitch/:pitch_id", protect, getPitchById);
 
-router.post("/retail-pitch/create-pitch", protect, cpUpload, createRetailPitch);
-router.put("/retail-pitch/update-pitch", protect, cpUpload, updateRetailPitch);
+router.post("/retail-pitch/create-pitch", protect, cpUpload, minifyUploadedImages, createRetailPitch);
+router.put("/retail-pitch/update-pitch", protect, cpUpload, minifyUploadedImages, updateRetailPitch);
 router.get(
   "/retail-pitch/pitch-details/:login_id/:retail_id",
   protect,
@@ -193,6 +195,7 @@ router.post(
   "/retail-pitch/reatail-pitch-company-list",
   protect,
   cpUpload,
+  minifyUploadedImages,
   getRetailPitchCompanyList,
 );
 router.get(

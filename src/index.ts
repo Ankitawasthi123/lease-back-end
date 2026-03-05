@@ -12,6 +12,7 @@ import authRoutes from './routes/authRoutes';
 import protectedRoutes from './routes/protectedRoutes';
 import mapRoutes from "./routes/mapRoutes"
 import adminRoutes from "./routes/adminRoutes"
+import { errorHandler, notFound } from './middleware/errorHandler';
 
 dotenv.config();
 
@@ -42,15 +43,21 @@ app.use(
   express.static(path.join(__dirname, '..', 'uploads'))
 );
 
+const configuredOrigins = String(config.CLIENT_URL)
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 const allowedOrigins = new Set([
-  config.CLIENT_URL,
+  ...configuredOrigins,
   "http://localhost:3000",
   "http://127.0.0.1:3000",
 ]);
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.has(origin)) {
+    const normalizedOrigin = origin?.trim().replace(/\/$/, "");
+    if (!normalizedOrigin || allowedOrigins.has(normalizedOrigin)) {
       return callback(null, true);
     }
     return callback(new Error("Not allowed by CORS"));
@@ -72,6 +79,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
 app.use('/api', mapRoutes);
 app.use('/api/admin', adminRoutes);
+
+app.use(notFound);
+app.use(errorHandler);
 
 app.listen(config.PORT, () => {
   console.log(`Server running on port ${config.PORT}`);
