@@ -11,6 +11,7 @@ import Pitch from './Pitch';
 import Retail from './Retail';
 import RetailPitch from './RetailPitch';
 import Payment from './Payment';
+import QueryMessage from './QueryMessage';
 
 // Set up associations
 try {
@@ -30,7 +31,7 @@ try {
 	// runtime association errors will be surfaced in server logs
 }
 
-export { User, CompanyRequirements, Bid, Warehouse, Pitch, Retail, RetailPitch, Payment };
+export { User, CompanyRequirements, Bid, Warehouse, Pitch, Retail, RetailPitch, Payment, QueryMessage };
 
 // Type exports for TypeScript support
 export * from './Warehouse';

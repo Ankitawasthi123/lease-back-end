@@ -15,6 +15,7 @@ import {
   sendOtpEmail,
   verifyEmailOtp,
   refreshToken,
+  createPublicQuery,
 } from "../controllers/authController";
 import { minifyUploadedImages } from "../middleware/imageCompression";
 
@@ -92,11 +93,14 @@ router.post("/resend-otp", resendOtp);
 router.post("/verifyotp", verifyOtp);
 router.post("/forgot-password", forgotPassword);
 router.post("/user-profile", getUserProfile);
+router.post("/query-message", createPublicQuery);
+
 
 // Routes with file uploads
 router.post("/complete-profile", cpUpload, minifyUploadedImages, completeRegistration);
 router.post("/send-email-otp", cpUpload, minifyUploadedImages, sendOtpEmail);
 
 router.post("/verify-email-otp", verifyEmailOtp);
+router.post("/create-query", createPublicQuery);
 
 export default router;

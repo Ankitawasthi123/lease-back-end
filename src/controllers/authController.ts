@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import sequelize from "../config/data-source";
 import User from "../models/User";
+import { QueryMessage } from "../models";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import * as crypto from "crypto";
@@ -702,3 +703,46 @@ export async function forgotPassword(req: Request, res: Response) {
     res.status(500).json({ message: "Server error" });
   }
 }
+
+export const createPublicQuery = async (req: Request, res: Response) => {
+  try {
+    const { name, email, phone, service, query, created_at } = req.body;
+
+    // Ensure the table exists when this endpoint is first called.
+    await QueryMessage.sync();
+
+    const formCreatedAt = created_at ? new Date(String(created_at)) : new Date();
+    const safeCreatedAt = Number.isNaN(formCreatedAt.getTime()) ? new Date() : formCreatedAt;
+
+    const payload = {
+      name: name ? String(name) : "",
+      email: email ? String(email) : "",
+      phone: phone ? String(phone) : "",
+      service: service ? String(service) : "",
+      query: query ? String(query) : "",
+      created_at: safeCreatedAt,
+    };
+
+    let created: QueryMessage;
+    try {
+      created = await QueryMessage.create(payload as any);
+    } catch (dbErr: any) {
+      if (dbErr?.original?.code === "23502" && dbErr?.original?.column === "id") {
+        const maxIdRaw = await QueryMessage.max("id");
+        const maxId = Number(maxIdRaw || 0);
+        const nextId = Number.isFinite(maxId) ? maxId + 1 : 1;
+        created = await QueryMessage.create({ id: nextId, ...payload } as any);
+      } else {
+        throw dbErr;
+      }
+    }
+
+    return res.status(201).json({
+      message: "Query submitted successfully",
+      data: created.toJSON(),
+    });
+  } catch (error) {
+    console.error("createPublicQuery error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
