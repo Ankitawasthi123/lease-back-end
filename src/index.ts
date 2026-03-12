@@ -12,6 +12,8 @@ import authRoutes from './routes/authRoutes';
 import protectedRoutes from './routes/protectedRoutes';
 import mapRoutes from "./routes/mapRoutes"
 import adminRoutes from "./routes/adminRoutes"
+import payuRoutes from "./routes/payuRoutes";
+import razorpayRoutes from "./routes/razorpayRoutes";
 import { errorHandler, notFound } from './middleware/errorHandler';
 
 dotenv.config();
@@ -79,6 +81,16 @@ app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
 app.use('/api', mapRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', payuRoutes);  // legacy endpoints forwarded to Razorpay implementation
+app.use('/api', razorpayRoutes);
+
+// dump registered routes for debugging
+app._router.stack
+  .filter((r: any) => r.route)
+  .forEach((r: any) => {
+    const methods = Object.keys(r.route.methods).join(',');
+    console.log(`registered route: ${methods.toUpperCase()} ${r.route.path}`);
+  });
 
 app.use(notFound);
 app.use(errorHandler);

@@ -68,6 +68,14 @@
 cp .env.example .env
 
 # Edit .env with your actual values
+
+Be sure to add the Razorpay credentials if you're using payments:
+
+```
+RAZORPAY_KEY_ID=...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
+```
 # - DB_PASSWORD
 # - JWT_SECRET
 # - TWILIO_* credentials

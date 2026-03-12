@@ -156,3 +156,19 @@ export const createPayment = async (req: Request, res: Response) => {
 	}
 };
 
+// GET /payment/user/:user_id - retrieve all payments for a specific user
+export const getPaymentsByUser = async (req: Request, res: Response) => {
+	const userIdParam = req.params.user_id || req.query.user_id;
+	if (!userIdParam || isNaN(Number(userIdParam))) {
+		return sendErrorResponse(res, 400, "user_id parameter is required and must be a number");
+	}
+	const userId = Number(userIdParam);
+	try {
+		const payments = await Payment.findAll({ where: { user_id: userId } });
+		return res.status(200).json({ success: true, data: payments });
+	} catch (err: any) {
+		console.error("Error fetching payments for user", userId, err.message || err);
+		return sendErrorResponse(res, 500, "Failed to retrieve payments", err);
+	}
+};
+

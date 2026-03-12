@@ -63,7 +63,7 @@ import {
   updateRetailPitch,
   getRetailPitchCompanyList,
 } from "../controllers/retailPitchesController";
-import { createPayment } from "../controllers/paymentController";
+import { createPayment, getPaymentsByUser } from "../controllers/paymentController";
 import { minifyUploadedImages } from "../middleware/imageCompression";
 
 const storage = multer.diskStorage({
@@ -206,5 +206,6 @@ router.get(
 router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
 
 router.post("/payment/create-payment", protect, createPayment);
+router.get("/payment/user/:user_id", protect, getPaymentsByUser);
 
 export default router;

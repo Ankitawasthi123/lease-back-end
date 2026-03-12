@@ -23,6 +23,9 @@ interface EnvConfig {
   TWILIO_VERIFY_SID: string;
   UPLOAD_DIR: string;
   MAX_FILE_SIZE: number;
+  RAZORPAY_KEY_ID: string;
+  RAZORPAY_KEY_SECRET: string;
+  RAZORPAY_WEBHOOK_SECRET: string;
 }
 
 const getEnvVariable = (key: keyof EnvConfig, defaultValue?: string | number): string | number => {
@@ -54,6 +57,18 @@ const config: EnvConfig = {
   TWILIO_VERIFY_SID: String(getEnvVariable('TWILIO_VERIFY_SID')),
   UPLOAD_DIR: String(getEnvVariable('UPLOAD_DIR', 'uploads/')),
   MAX_FILE_SIZE: Number(getEnvVariable('MAX_FILE_SIZE', 5242880)),
+  // Razorpay keys - supply fallbacks so the app can start even if the
+  // environment variables are not set.  (These values should *not* be
+  // used in production; replace them or export real secrets instead.)
+  RAZORPAY_KEY_ID: String(
+    getEnvVariable('RAZORPAY_KEY_ID', 'rzp_live_SQHZRDi6oXqifn')
+  ),
+  RAZORPAY_KEY_SECRET: String(
+    getEnvVariable('RAZORPAY_KEY_SECRET', 'fJuY7eX1afPrBXJwApqyI1ig')
+  ),
+  RAZORPAY_WEBHOOK_SECRET: String(
+    getEnvVariable('RAZORPAY_WEBHOOK_SECRET', '')
+  ),
 };
 
 export default config;
