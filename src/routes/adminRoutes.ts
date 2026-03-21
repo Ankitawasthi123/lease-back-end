@@ -31,6 +31,9 @@ import {
   deleteBid,
   deleteUser,
 } from "../controllers/admin/adminDeleteController";
+import { sendBroadcastNotification } from "../controllers/admin/adminNotificationController";
+import { validate } from "../middleware/validate";
+import { sendBroadcastNotificationSchema } from "../validators/notification";
 
 import multer from "multer";
 import path from "path";
@@ -80,6 +83,12 @@ router.put("/retails/status", protect, updateRetailStatus);
 router.put("/retail-pitches/status", protect, updateRetailPitchStatus);
 router.put("/bids/status", protect, updateBidStatus);
 router.put("/users/status", protect, updateUserStatus);
+router.post(
+  "/notifications/broadcast",
+  protect,
+  validate(sendBroadcastNotificationSchema),
+  sendBroadcastNotification
+);
 
 // DELETE ROUTES
 router.delete("/company-requirements", protect, deleteCompanyRequirement);

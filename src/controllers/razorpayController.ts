@@ -12,13 +12,10 @@ const razorpay = new Razorpay({
 
 // POST /razorpay/order - create order for frontend checkout
 export const createRazorpayOrder = async (req: Request, res: Response) => {
-  console.log("Received request to create Razorpay order with body:===================================", req.body);
   // ensure credentials are present before attempting any API call
   const keyId = (process.env.RAZORPAY_KEY_ID as string) || (config as any).RAZORPAY_KEY_ID;
   const keySecret = (process.env.RAZORPAY_KEY_SECRET as string) || (config as any).RAZORPAY_KEY_SECRET;
   // debug logging
-  console.log("Razorpay keys read:", { keyId, hasSecret: !!keySecret });
-  console.log("Razorpay config from env:==========================================================", keyId, keySecret)
   if (!keyId || !keySecret) {
     console.error("Razorpay credentials not configured", { keyId, keySecret });
     return res.status(500).json({

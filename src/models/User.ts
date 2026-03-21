@@ -27,6 +27,8 @@ class User extends Model {
   public email_verified!: boolean;
 
   public profile_image!: string;
+  public failed_login_attempts!: number;
+  public locked_until!: Date | null;
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -63,6 +65,8 @@ User.init(
     email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     profile_image: { type: DataTypes.STRING, allowNull: true },
     status: { type: DataTypes.STRING, allowNull: true },
+    failed_login_attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    locked_until: { type: DataTypes.DATE, allowNull: true },
 
 
     

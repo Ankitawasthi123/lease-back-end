@@ -1,8 +1,13 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "mysecret";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "myrefreshsecret";
+// These MUST be set in the environment – no weak fallbacks
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+
+if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
+  throw new Error("JWT_SECRET and JWT_REFRESH_SECRET must be defined in environment");
+}
 
 interface JwtPayloadCustom {
   userId?: string;
@@ -31,17 +36,18 @@ export const protect: RequestHandler = (req, res, next) => {
       try {
         const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayloadCustom;
         
-        // Issue new access token
+        // Issue new access token (15 minutes)
         const newAccessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-          expiresIn: "24h",
+          expiresIn: "15m",
         });
 
+        const isProd = process.env.NODE_ENV === "production";
         // Update token cookie
         res.cookie("token", newAccessToken, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 24 * 60 * 60 * 1000,
+          secure: isProd,
+          sameSite: isProd ? "strict" : "lax",
+          maxAge: 15 * 60 * 1000, // 15 minutes
         });
 
         (req as any).user = decoded;

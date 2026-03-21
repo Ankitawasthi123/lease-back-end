@@ -14,6 +14,7 @@ import mapRoutes from "./routes/mapRoutes"
 import adminRoutes from "./routes/adminRoutes"
 import payuRoutes from "./routes/payuRoutes";
 import razorpayRoutes from "./routes/razorpayRoutes";
+import notificationRoutes from "./routes/notificationRoutes";
 import { errorHandler, notFound } from './middleware/errorHandler';
 
 dotenv.config();
@@ -25,15 +26,38 @@ app.use(cookieParser());
 app.use(helmet());
 app.use(hpp());
 
-// Basic rate limiting
+// Trust exactly one proxy (Nginx) so rate-limit uses real client IP
 app.set('trust proxy', 1);
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+
+// Global limiter – 150 req / 15 min per IP
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 150,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.' },
 });
-app.use(limiter);
+app.use(globalLimiter);
+
+// Auth limiter – 15 req / 15 min per IP (covers /api/auth/*)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many auth requests, please try again later.' },
+  skipSuccessfulRequests: true, // only count failed attempts toward the limit
+});
+
+// Login-specific limiter – 10 req / 15 min (extra-tight for brute-force)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts, please try again in 15 minutes.' },
+  skipSuccessfulRequests: true,
+});
 
 app.use(
   '/uploads',
@@ -50,11 +74,13 @@ const configuredOrigins = String(config.CLIENT_URL)
   .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-const allowedOrigins = new Set([
-  ...configuredOrigins,
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-]);
+// In development allow localhost; in production allow only real domains
+const devOrigins =
+  config.NODE_ENV !== "production"
+    ? ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"]
+    : [];
+
+const allowedOrigins = new Set([...configuredOrigins, ...devOrigins]);
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -68,6 +94,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
   optionsSuccessStatus: 200,
+  maxAge: 86400, // cache preflight for 24 h
 };
 
 app.use(cors(corsOptions));
@@ -76,11 +103,16 @@ app.options('*', cors(corsOptions));
 
 app.use(express.json());
 
-app.use('/api', userRoutes);         
+// Login-specific and auth-wide rate limiters applied before routes
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/auth', authLimiter);
+
+app.use('/api', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api', protectedRoutes);
 app.use('/api', mapRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', notificationRoutes);
 app.use('/api', payuRoutes);  // legacy endpoints forwarded to Razorpay implementation
 app.use('/api', razorpayRoutes);
 

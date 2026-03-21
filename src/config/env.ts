@@ -26,6 +26,10 @@ interface EnvConfig {
   RAZORPAY_KEY_ID: string;
   RAZORPAY_KEY_SECRET: string;
   RAZORPAY_WEBHOOK_SECRET: string;
+  LOGIN_MAX_ATTEMPTS: number;
+  LOGIN_LOCKOUT_MINUTES: number;
+  ONESIGNAL_APP_ID: string;
+  ONESIGNAL_REST_API_KEY: string;
 }
 
 const getEnvVariable = (key: keyof EnvConfig, defaultValue?: string | number): string | number => {
@@ -68,6 +72,14 @@ const config: EnvConfig = {
   ),
   RAZORPAY_WEBHOOK_SECRET: String(
     getEnvVariable('RAZORPAY_WEBHOOK_SECRET', '')
+  ),
+  LOGIN_MAX_ATTEMPTS: Number(getEnvVariable('LOGIN_MAX_ATTEMPTS', 5)),
+  LOGIN_LOCKOUT_MINUTES: Number(getEnvVariable('LOGIN_LOCKOUT_MINUTES', 15)),
+  ONESIGNAL_APP_ID: String(
+    getEnvVariable('ONESIGNAL_APP_ID', '5528ca94-a638-44d8-a4d1-32d2bf9527db')
+  ),
+  ONESIGNAL_REST_API_KEY: String(
+    process.env.ONESIGNAL_REST_API_KEY || process.env.ONESIGNAL_API_KEY || ''
   ),
 };
 

@@ -406,12 +406,42 @@ export const loginUser = async (req: Request, res: Response) => {
   try {
     const user = await User.findOne({ where: { email } });
     if (!user) {
+      // Timing-safe: still run bcrypt so response time doesn't reveal user existence
+      await bcrypt.compare(password, "$2b$10$invalidhashpadding000000000000000000000000000000000000000");
       return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    // ── Account lockout check ────────────────────────────────────────────
+    if (user.locked_until && user.locked_until > new Date()) {
+      const minutesLeft = Math.ceil((user.locked_until.getTime() - Date.now()) / 60_000);
+      return res.status(429).json({
+        message: `Account temporarily locked. Try again in ${minutesLeft} minute(s).`,
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
+      const maxAttempts = config.LOGIN_MAX_ATTEMPTS;
+      const newAttempts = (user.failed_login_attempts || 0) + 1;
+
+      if (newAttempts >= maxAttempts) {
+        const lockUntil = new Date(Date.now() + config.LOGIN_LOCKOUT_MINUTES * 60_000);
+        await user.update({ failed_login_attempts: newAttempts, locked_until: lockUntil });
+        return res.status(429).json({
+          message: `Account locked after ${maxAttempts} failed attempts. Try again in ${config.LOGIN_LOCKOUT_MINUTES} minutes.`,
+        });
+      }
+
+      await user.update({ failed_login_attempts: newAttempts });
+      return res.status(400).json({
+        message: "Invalid credentials",
+        attemptsRemaining: maxAttempts - newAttempts,
+      });
+    }
+
+    // ── Reset lockout counters on success ────────────────────────────────
+    if (user.failed_login_attempts > 0 || user.locked_until) {
+      await user.update({ failed_login_attempts: 0, locked_until: null });
     }
 
     // Check if email and mobile are verified
@@ -419,36 +449,40 @@ export const loginUser = async (req: Request, res: Response) => {
       return res.status(403).json({
         message:
           "Account not verified. Please verify your email and mobile first.",
-        userId: user.id, // send userId so front-end can trigger OTP flow
+        userId: user.id,
         emailVerified: user.email_verified,
         mobileVerified: user.mobile_verified,
       });
     }
 
-    // Both verified – issue access and refresh tokens
-    const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "24h" });
+    // ── Issue tokens ─────────────────────────────────────────────────────
+    // Access token: short-lived (15 min) | Refresh token: 7 days
+    const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "15m" });
     const refreshToken = jwt.sign({ id: user.id }, JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-    // Set access token cookie (24 hours)
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookie("token", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: isProd,
+      sameSite: isProd ? "strict" : "lax",
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
-    // Set refresh token cookie (7 days)
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "strict" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    // Return safe user (exclude sensitive fields)
+    const { password: _pw, email_otp, mobile_otp, otp_expires_at, ...safeUser } = (user as any).toJSON();
+
     return res.json({
       message: "Login successful",
-      user,
-      accessToken, // Also return tokens in response for flexibility
+      user: safeUser,
+      accessToken,
       refreshToken,
     });
   } catch (error) {
@@ -471,22 +505,22 @@ export const refreshToken = (req: Request, res: Response) => {
         .json({ message: "Invalid or expired refresh token" });
     }
 
-    // Issue new access token (24 hours)
+    // Issue new short-lived access token (15 minutes)
     const accessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-      expiresIn: "24h",
+      expiresIn: "15m",
     });
 
-    // Update the token cookie
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie("token", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: isProd,
+      sameSite: isProd ? "strict" : "lax",
+      maxAge: 15 * 60 * 1000, // 15 minutes
     });
 
-    res.json({ 
+    res.json({
       message: "Token refreshed successfully",
-      accessToken 
+      accessToken,
     });
   });
 };

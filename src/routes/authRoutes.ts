@@ -18,6 +18,16 @@ import {
   createPublicQuery,
 } from "../controllers/authController";
 import { minifyUploadedImages } from "../middleware/imageCompression";
+import { validate } from "../middleware/validate";
+import {
+  registerSchema,
+  loginSchema,
+  verifyOtpSchema,
+  resendOtpSchema,
+  forgotPasswordSchema,
+  sendEmailOtpSchema,
+  verifyEmailOtpSchema,
+} from "../validators/auth";
 
 // ---------------- Multer Configuration ----------------
 
@@ -85,22 +95,22 @@ export const cpUpload = (req: Request, res: Response, next: NextFunction) => {
 // ---------------- Router ----------------
 const router = Router();
 
-router.post("/register", registerUser);
-router.post("/login", loginUser);
+router.post("/register", validate(registerSchema), registerUser);
+router.post("/login", validate(loginSchema), loginUser);
 router.post("/refresh-token", refreshToken);
 router.get("/logout", logOutUser);
-router.post("/resend-otp", resendOtp);
-router.post("/verifyotp", verifyOtp);
-router.post("/forgot-password", forgotPassword);
+router.post("/resend-otp", validate(resendOtpSchema), resendOtp);
+router.post("/verifyotp", validate(verifyOtpSchema), verifyOtp);
+router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
 router.post("/user-profile", getUserProfile);
 router.post("/query-message", createPublicQuery);
 
 
 // Routes with file uploads
 router.post("/complete-profile", cpUpload, minifyUploadedImages, completeRegistration);
-router.post("/send-email-otp", cpUpload, minifyUploadedImages, sendOtpEmail);
+router.post("/send-email-otp", validate(sendEmailOtpSchema), cpUpload, minifyUploadedImages, sendOtpEmail);
 
-router.post("/verify-email-otp", verifyEmailOtp);
+router.post("/verify-email-otp", validate(verifyEmailOtpSchema), verifyEmailOtp);
 router.post("/create-query", createPublicQuery);
 
 export default router;
