@@ -206,6 +206,8 @@ router.get(
 router.get("/retail-pitch/:pitch_id", protect, getRetailPitchById);
 
 router.post("/payment/create-payment", protect, createPayment);
+router.post("/payment/create", protect, createPayment);
+router.post("/create-payment", protect, createPayment);
 router.get("/payment/user/:user_id", protect, getPaymentsByUser);
 
 export default router;

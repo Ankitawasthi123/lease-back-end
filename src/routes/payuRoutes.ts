@@ -20,12 +20,15 @@ router.post("/payu/initiate", createRazorpayOrder);
 
 // some front‑end versions expect /payment/initiate; keep them working too
 router.post("/payment/initiate", createRazorpayOrder);
+router.post("/payment/order", createRazorpayOrder);
 
 // legacy POST /payu/callback -> verify signature (frontend sends the
 // razorpay fields here).  We also allow webhooks under the same
 // path so that an externally-configured callback can continue to use
 // `/payu/callback` if needed.
 router.post("/payu/callback", verifyRazorpaySignature);
+router.post("/payment/callback", verifyRazorpaySignature);
+router.post("/payment/verify", verifyRazorpaySignature);
 
 // optional: if you were relying on server->server notification you
 // may call the webhook handler as well

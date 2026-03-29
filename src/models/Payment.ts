@@ -13,6 +13,15 @@ class Payment extends Model {
   public status!: string;
   public failure_reason!: string | null;
   public paid_at!: Date | null;
+  public plan!: string | null;
+  public billing_email!: string | null;
+  public gateway_order_id!: string | null;
+  public gateway_payment_id!: string | null;
+  public gateway_signature!: string | null;
+  public callback_payload!: object | null;
+  public invoice_email_sent!: boolean;
+  public invoice_email_error!: string | null;
+  public invoice_sent_at!: Date | null;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 }
@@ -64,6 +73,43 @@ Payment.init(
       allowNull: true,
     },
     paid_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    plan: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    billing_email: {
+      type: DataTypes.STRING(320),
+      allowNull: true,
+    },
+    gateway_order_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    gateway_payment_id: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    gateway_signature: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    callback_payload: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    invoice_email_sent: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    invoice_email_error: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    invoice_sent_at: {
       type: DataTypes.DATE,
       allowNull: true,
     },

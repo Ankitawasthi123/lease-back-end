@@ -135,7 +135,7 @@ export const asyncHandler = (
  * 404 Not Found middleware
  * Place this BEFORE error handler
  */
-export const notFound = (_req: Request, _res: Response, next: NextFunction) => {
-  const error = new AppError("Route not found", 404);
+export const notFound = (req: Request, _res: Response, next: NextFunction) => {
+  const error = new AppError(`Route not found: ${req.method} ${req.originalUrl}`, 404);
   next(error);
 };
