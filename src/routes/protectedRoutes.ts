@@ -65,6 +65,16 @@ import {
 } from "../controllers/retailPitchesController";
 import { createPayment, getPaymentsByUser } from "../controllers/paymentController";
 import { minifyUploadedImages } from "../middleware/imageCompression";
+import {
+  createTransport,
+  getTransportById,
+  getTransportList,
+  getApprovedTransportsForOwnerAndAgent,
+  getApprovedTransportCompanyList,
+  updateTransport,
+  deleteTransport,
+  getTransportUniqueLocationList,
+} from "../controllers/transportController";
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -209,5 +219,18 @@ router.post("/payment/create-payment", protect, createPayment);
 router.post("/payment/create", protect, createPayment);
 router.post("/create-payment", protect, createPayment);
 router.get("/payment/user/:user_id", protect, getPaymentsByUser);
+
+router.post("/transport/create-transport", protect, createTransport);
+router.get("/transport/list", protect, getTransportList);
+router.get(
+  "/transport/approved-list",
+  protect,
+  getApprovedTransportsForOwnerAndAgent,
+);
+router.get("/transport/company-list", protect, getApprovedTransportCompanyList);
+router.get("/transport/unique-location-list", protect, getTransportUniqueLocationList);
+router.get("/transport/:id", protect, getTransportById);
+router.put("/transport/update", protect, updateTransport);
+router.delete("/transport/:id", protect, deleteTransport);
 
 export default router;

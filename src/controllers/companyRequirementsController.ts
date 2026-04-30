@@ -291,7 +291,7 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
           return bid.toJSON();
         } else {
           return {
-            ...bid.toJSON(),
+            // ...bid.toJSON(),
             bid_details: {},
           };
         }
