@@ -8,6 +8,9 @@ class Warehouse extends Model {
   public warehouse_size!: object;
   public warehouse_compliance!: object;
   public material_details!: object;
+  public description!: string;
+  public requirement_type!: string;
+  public pdf_file!: object | null;
   public status!: string;
   public company_details!: object;
   public created_date!: Date;
@@ -44,6 +47,19 @@ Warehouse.init(
       allowNull: true,
       defaultValue: {},
     },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    requirement_type: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    pdf_file: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+    },
     status: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -76,6 +92,9 @@ export interface CreateWarehouseRequest {
   warehouse_size: string;
   warehouse_compliance: object;
   material_details: object;
+  description?: string;
+  requirement_type?: string;
+  pdf_file?: object | null;
   login_id: string;
   status?: string;
   company_details?: object;
@@ -88,6 +107,9 @@ export interface UpdateWarehouseRequest {
   warehouse_size: string;
   warehouse_compliance: object;
   material_details: object;
+  description?: string;
+  requirement_type?: string;
+  pdf_file?: object | null;
 }
 
 export interface DeleteWarehouseRequest {
@@ -101,6 +123,9 @@ export interface WarehouseResponse {
   warehouse_size: string;
   warehouse_compliance: object;
   material_details: object;
+  description?: string;
+  requirement_type?: string;
+  pdf_file?: object | null;
   login_id: string;
   status?: string;
   company_details?: object;

@@ -7,6 +7,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import hpp from 'hpp';
 import config from './config/env';
+import sequelize from './config/data-source';
+import './models';
 import userRoutes from './routes/userRoutes';
 import authRoutes from './routes/authRoutes';
 import protectedRoutes from './routes/protectedRoutes';
@@ -36,6 +38,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many requests, please try again later.' },
+  skip: (req) => req.path === '/api/auth/login',
 });
 app.use(globalLimiter);
 
@@ -47,18 +50,10 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: 'Too many auth requests, please try again later.' },
   skipSuccessfulRequests: true, // only count failed attempts toward the limit
+  skip: (req) => req.path === '/login',
 });
 
 // Login-specific limiter – 10 req / 15 min (extra-tight for brute-force)
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many login attempts, please try again in 15 minutes.' },
-  skipSuccessfulRequests: true,
-});
-
 app.use(
   '/uploads',
   (_req, res, next) => {
@@ -103,8 +98,7 @@ app.options('*', cors(corsOptions));
 
 app.use(express.json());
 
-// Login-specific and auth-wide rate limiters applied before routes
-app.use('/api/auth/login', loginLimiter);
+// Auth-wide rate limiter applied before routes. Login is skipped.
 app.use('/api/auth', authLimiter);
 
 app.use('/api', userRoutes);
@@ -127,7 +121,39 @@ app._router.stack
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(config.PORT, () => {
-  console.log(`Server running on port ${config.PORT}`);
-});
+const ensureCompanyRequirementsColumns = async () => {
+  const columnQueries = [
+    `ALTER TABLE company_requirements ADD COLUMN IF NOT EXISTS justification TEXT`,
+    `ALTER TABLE company_requirements ADD COLUMN IF NOT EXISTS miscellaneous JSONB DEFAULT '{}'`,
+    `ALTER TABLE company_requirements ADD COLUMN IF NOT EXISTS pdf_file JSONB DEFAULT NULL`,
+    `ALTER TABLE retail ADD COLUMN IF NOT EXISTS description TEXT`,
+    `ALTER TABLE retail ADD COLUMN IF NOT EXISTS pdf_file JSONB DEFAULT NULL`,
+    `ALTER TABLE warehouse ADD COLUMN IF NOT EXISTS description TEXT`,
+    `ALTER TABLE warehouse ADD COLUMN IF NOT EXISTS requirement_type TEXT`,
+    `ALTER TABLE warehouse ADD COLUMN IF NOT EXISTS pdf_file JSONB DEFAULT NULL`,
+  ];
+
+  for (const query of columnQueries) {
+    await sequelize.query(query);
+  }
+};
+
+const startServer = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('Database connected successfully.');
+
+    await ensureCompanyRequirementsColumns();
+    console.log('CompanyRequirements legacy columns ensured.');
+
+    app.listen(config.PORT, () => {
+      console.log(`Server running on port ${config.PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
+};
+
+startServer();
 

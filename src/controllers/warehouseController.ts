@@ -4,6 +4,8 @@ import { Warehouse, Pitch, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
+import fs from "fs";
+import path from "path";
 import {
   CreateWarehouseRequest,
   UpdateWarehouseRequest,
@@ -11,19 +13,56 @@ import {
   WarehouseResponse,
 } from "../models/Warehouse";
 
+const parseRequestBody = (req: Request) => {
+  if (!req.body?.data) {
+    return req.body;
+  }
+
+  try {
+    return { ...req.body, ...JSON.parse(req.body.data) };
+  } catch {
+    return req.body;
+  }
+};
+
+const moveWarehousePdfFile = (warehouseId: number, pdfFile: Express.Multer.File) => {
+  const warehousePdfDir = path.join("uploads", "pdf", `warehouse_${warehouseId}`);
+
+  if (!fs.existsSync(warehousePdfDir)) {
+    fs.mkdirSync(warehousePdfDir, { recursive: true });
+  }
+
+  const currentPath = path.join("uploads", "pdf", pdfFile.filename);
+  const destinationPath = path.join(warehousePdfDir, pdfFile.filename);
+
+  if (fs.existsSync(currentPath)) {
+    fs.renameSync(currentPath, destinationPath);
+  }
+
+  return {
+    filename: pdfFile.filename,
+    mimetype: pdfFile.mimetype,
+    size: pdfFile.size,
+    url: `/uploads/pdf/warehouse_${warehouseId}/${pdfFile.filename}`,
+  };
+};
+
 export const createWarehouse = async (
   req: Request<{}, {}, CreateWarehouseRequest>,
   res: Response<any>,
 ) => {
+  const body = parseRequestBody(req);
   const {
     warehouse_location,
     warehouse_size,
     warehouse_compliance,
     material_details,
+    description,
     login_id,
+    requirement_type,
     status,
     company_details,
-  } = req.body;
+  } = body;
 
   if (!login_id) {
     return sendErrorResponse(res, 400, "login_id is required");
@@ -36,9 +75,19 @@ export const createWarehouse = async (
       warehouse_size: warehouse_size || {},
       warehouse_compliance: warehouse_compliance || {},
       material_details: material_details || {},
+      description: description || "",
+      requirement_type: requirement_type || "",
+      pdf_file: null,
       status: status || "submitted",
       company_details: company_details || {},
     });
+
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    if (pdfFile) {
+      const pdfMeta = moveWarehousePdfFile(warehouse.id, pdfFile);
+      await warehouse.update({ pdf_file: pdfMeta });
+    }
 
     res.status(201).json({
       success: true,
@@ -192,9 +241,19 @@ export const updateWarehouse = async (
   req: Request<{}, {}, UpdateWarehouseRequest>,
   res: Response<any>,
 ) => {
-  const { login_id, id } = req.body;
+  const body = parseRequestBody(req);
+  const {
+    login_id,
+    loginId,
+    company_id,
+    companyId,
+    id,
+    warehouse_id,
+  } = body;
+  const warehouseId = id ?? warehouse_id;
+  const loginIdValue = login_id ?? loginId ?? company_id ?? companyId;
 
-  if (!id || !login_id) {
+  if (!warehouseId || !loginIdValue) {
     return sendErrorResponse(res, 400, "id and login_id are required");
   }
 
@@ -203,25 +262,45 @@ export const updateWarehouse = async (
     warehouse_size,
     warehouse_compliance,
     material_details,
-  } = req.body;
+    description,
+    requirement_type,
+    status,
+    company_details,
+  } = body;
 
   try {
     // Check if warehouse exists
     const existing = await Warehouse.findOne({
-      where: { login_id: Number(login_id), id: Number(id) },
+      where: { login_id: Number(loginIdValue), id: Number(warehouseId) },
     });
 
     if (!existing) {
       return sendErrorResponse(res, 403, "You do not have permission to edit this warehouse");
     }
 
-    // Update warehouse
-    await existing.update({
+    const updatePayload: any = {
       warehouse_location: warehouse_location || existing.warehouse_location,
       warehouse_size: warehouse_size || existing.warehouse_size,
       warehouse_compliance: warehouse_compliance || existing.warehouse_compliance,
       material_details: material_details || existing.material_details,
-    });
+      description:
+        description !== undefined ? String(description || "") : existing.description || "",
+      requirement_type:
+        requirement_type !== undefined
+          ? String(requirement_type || "")
+          : existing.requirement_type || "",
+      status: status || existing.status,
+      company_details: company_details || existing.company_details,
+    };
+
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    if (pdfFile) {
+      updatePayload.pdf_file = moveWarehousePdfFile(existing.id, pdfFile);
+    }
+
+    // Update warehouse
+    await existing.update(updatePayload);
 
     res.status(200).json({
       success: true,

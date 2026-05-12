@@ -14,6 +14,9 @@ class CompanyRequirements extends Model {
   public requirement_type!: string;
   public bid_details!: object;
   public distance!: any[];
+  public description!: string;
+  public miscellaneous!: object;
+  public pdf_file!: object | null;
   public status!: string;
   public created_date!: Date;
 }
@@ -77,6 +80,20 @@ CompanyRequirements.init(
       type: DataTypes.JSONB,
       allowNull: true,
       defaultValue: [],
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    miscellaneous: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
+    pdf_file: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
     },
     status: {
       type: DataTypes.STRING,

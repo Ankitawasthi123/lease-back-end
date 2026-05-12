@@ -412,30 +412,13 @@ export const loginUser = async (req: Request, res: Response) => {
     }
 
     // ── Account lockout check ────────────────────────────────────────────
-    if (user.locked_until && user.locked_until > new Date()) {
-      const minutesLeft = Math.ceil((user.locked_until.getTime() - Date.now()) / 60_000);
-      return res.status(429).json({
-        message: `Account temporarily locked. Try again in ${minutesLeft} minute(s).`,
-      });
-    }
-
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      const maxAttempts = config.LOGIN_MAX_ATTEMPTS;
       const newAttempts = (user.failed_login_attempts || 0) + 1;
 
-      if (newAttempts >= maxAttempts) {
-        const lockUntil = new Date(Date.now() + config.LOGIN_LOCKOUT_MINUTES * 60_000);
-        await user.update({ failed_login_attempts: newAttempts, locked_until: lockUntil });
-        return res.status(429).json({
-          message: `Account locked after ${maxAttempts} failed attempts. Try again in ${config.LOGIN_LOCKOUT_MINUTES} minutes.`,
-        });
-      }
-
-      await user.update({ failed_login_attempts: newAttempts });
+      await user.update({ failed_login_attempts: newAttempts, locked_until: null });
       return res.status(400).json({
         message: "Invalid credentials",
-        attemptsRemaining: maxAttempts - newAttempts,
       });
     }
 
@@ -444,8 +427,11 @@ export const loginUser = async (req: Request, res: Response) => {
       await user.update({ failed_login_attempts: 0, locked_until: null });
     }
 
-    // Check if email and mobile are verified
-    if (!user.email_verified || !user.mobile_verified) {
+    // Only enforce verification for accounts with pending OTPs / explicit false flags
+    const hasPendingOtp = Boolean(user.email_otp || user.mobile_otp || user.otp_expires_at);
+    const hasExplicitUnverifiedFlag = user.email_verified === false || user.mobile_verified === false;
+
+    if (hasExplicitUnverifiedFlag && hasPendingOtp) {
       return res.status(403).json({
         message:
           "Account not verified. Please verify your email and mobile first.",
@@ -456,8 +442,8 @@ export const loginUser = async (req: Request, res: Response) => {
     }
 
     // ── Issue tokens ─────────────────────────────────────────────────────
-    // Access token: short-lived (15 min) | Refresh token: 7 days
-    const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "15m" });
+    // Access token: short-lived (30 min) | Refresh token: 7 days
+    const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "30m" });
     const refreshToken = jwt.sign({ id: user.id }, JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
     const isProd = process.env.NODE_ENV === "production";
@@ -466,7 +452,7 @@ export const loginUser = async (req: Request, res: Response) => {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? "strict" : "lax",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 30 * 60 * 1000, // 30 minutes
     });
 
     res.cookie("refreshToken", refreshToken, {

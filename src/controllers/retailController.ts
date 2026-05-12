@@ -4,6 +4,64 @@ import { Retail, RetailPitch, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
+import fs from "fs";
+import path from "path";
+
+const parseRequestBody = (req: Request) => {
+  if (!req.body?.data) {
+    return req.body;
+  }
+
+  try {
+    return { ...req.body, ...JSON.parse(req.body.data) };
+  } catch {
+    return req.body;
+  }
+};
+
+const moveRetailPdfFile = (retailId: number, pdfFile: Express.Multer.File) => {
+  const retailPdfDir = path.join("uploads", "pdf", `retail_${retailId}`);
+
+  if (!fs.existsSync(retailPdfDir)) {
+    fs.mkdirSync(retailPdfDir, { recursive: true });
+  }
+
+  const currentPath = path.join("uploads", "pdf", pdfFile.filename);
+  const destinationPath = path.join(retailPdfDir, pdfFile.filename);
+
+  if (fs.existsSync(currentPath)) {
+    fs.renameSync(currentPath, destinationPath);
+  }
+
+  return {
+    filename: pdfFile.filename,
+    mimetype: pdfFile.mimetype,
+    size: pdfFile.size,
+    url: `/uploads/pdf/retail_${retailId}/${pdfFile.filename}`,
+  };
+};
+
+const copyRetailPdfFile = (retailId: number, pdfFile: Express.Multer.File) => {
+  const retailPdfDir = path.join("uploads", "pdf", `retail_${retailId}`);
+
+  if (!fs.existsSync(retailPdfDir)) {
+    fs.mkdirSync(retailPdfDir, { recursive: true });
+  }
+
+  const currentPath = path.join("uploads", "pdf", pdfFile.filename);
+  const destinationPath = path.join(retailPdfDir, pdfFile.filename);
+
+  if (fs.existsSync(currentPath)) {
+    fs.copyFileSync(currentPath, destinationPath);
+  }
+
+  return {
+    filename: pdfFile.filename,
+    mimetype: pdfFile.mimetype,
+    size: pdfFile.size,
+    url: `/uploads/pdf/retail_${retailId}/${pdfFile.filename}`,
+  };
+};
 
 const hasSuccessfulPayment = async (userIds: number[]): Promise<boolean> => {
   const cleanUserIds = userIds.filter((value, index, arr) => Number.isFinite(value) && value > 0 && arr.indexOf(value) === index);
@@ -32,14 +90,16 @@ const hasSuccessfulPayment = async (userIds: number[]): Promise<boolean> => {
 
 // ✅ CREATE Retail
 export const createRetail = async (req: Request, res: Response) => {
+  const body = parseRequestBody(req);
   const {
     retail_details,
     retail_type,
     retail_compliance,
     login_id,
+    description,
     status,
     company_details,
-  } = req.body;
+  } = body;
 
   if (!login_id) {
     return sendErrorResponse(res, 400, "login_id is required");
@@ -51,9 +111,18 @@ export const createRetail = async (req: Request, res: Response) => {
       retail_type: retail_type || [],
       login_id: Number(login_id),
       retail_compliance: retail_compliance || {},
+      description: description || "",
+      pdf_file: null,
       status: status || "pending",
       company_details: company_details || {},
     });
+
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    if (pdfFile) {
+      const pdfMeta = moveRetailPdfFile(retail.id, pdfFile);
+      await retail.update({ pdf_file: pdfMeta });
+    }
 
     res.status(201).json({
       success: true,
@@ -67,6 +136,169 @@ export const createRetail = async (req: Request, res: Response) => {
 };
 
 // ✅ GET Retails for Current User
+export const createBulkRetail = async (req: Request, res: Response) => {
+  const body = parseRequestBody(req);
+
+  const {
+    retail_details,
+    retail_type,
+    retail_compliance,
+    login_id: bodyLoginId,
+    loginId,
+    company_id,
+    companyId,
+    description,
+    status,
+    company_details,
+    retails,
+    locations,
+    retail_locations,
+    location_list,
+  } = body;
+  const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+  if (Array.isArray(retails)) {
+    if (retails.length === 0) {
+      return sendErrorResponse(res, 400, "retails are required");
+    }
+
+    const invalidRetail = retails.find((retail: any) => {
+      const retailLoginId =
+        retail?.login_id ??
+        retail?.loginId ??
+        retail?.company_id ??
+        retail?.companyId ??
+        req.user?.login_id ??
+        req.user?.id ??
+        req.user?.userId;
+
+      return !retailLoginId;
+    });
+
+    if (invalidRetail) {
+      return sendErrorResponse(res, 400, "login_id is required for every retail");
+    }
+
+    try {
+      const retailRows = retails.map((retail: any) => ({
+        retail_details: retail.retail_details || {},
+        retail_type: retail.retail_type || [],
+        login_id: Number(
+          retail.login_id ??
+            retail.loginId ??
+            retail.company_id ??
+            retail.companyId ??
+            req.user?.login_id ??
+            req.user?.id ??
+            req.user?.userId
+        ),
+        retail_compliance: retail.retail_compliance || {},
+        description: retail.description || "",
+        pdf_file: null,
+        status: retail.status || "pending",
+        company_details: retail.company_details || {},
+      }));
+
+      const createdRetails = await Retail.bulkCreate(retailRows, { returning: true });
+
+      if (pdfFile) {
+        await Promise.all(
+          createdRetails.map((retail: any) =>
+            retail.update({ pdf_file: copyRetailPdfFile(retail.id, pdfFile) })
+          )
+        );
+
+        const uploadedPath = path.join("uploads", "pdf", pdfFile.filename);
+        if (fs.existsSync(uploadedPath)) {
+          fs.unlinkSync(uploadedPath);
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: "Retails created successfully",
+        count: createdRetails.length,
+        data: createdRetails.map((retail) => retail.toJSON()),
+      });
+    } catch (err: any) {
+      console.error("Create Bulk Retail Error:", err.message);
+      return sendErrorResponse(res, 500, "Failed to create retails", err);
+    }
+  }
+
+  const login_id =
+    bodyLoginId ??
+    loginId ??
+    company_id ??
+    companyId ??
+    req.user?.login_id ??
+    req.user?.id ??
+    req.user?.userId;
+
+  if (!login_id) {
+    return sendErrorResponse(res, 400, "login_id is required");
+  }
+
+  const locationInput =
+    locations ??
+    retail_locations ??
+    location_list ??
+    retail_details?.retail_locations ??
+    retail_details?.locations ??
+    retail_details?.retail_location;
+
+  const locationList = Array.isArray(locationInput)
+    ? locationInput
+    : locationInput
+      ? [locationInput]
+      : [];
+
+  if (locationList.length === 0) {
+    return sendErrorResponse(res, 400, "locations are required");
+  }
+
+  try {
+    const retailRows = locationList.map((location: any) => ({
+      retail_details: {
+        ...(retail_details || {}),
+        retail_location: location,
+      },
+      retail_type: retail_type || [],
+      login_id: Number(login_id),
+      retail_compliance: retail_compliance || {},
+      description: description || "",
+      pdf_file: null,
+      status: status || "pending",
+      company_details: company_details || {},
+    }));
+
+    const retails = await Retail.bulkCreate(retailRows, { returning: true });
+
+    if (pdfFile) {
+      await Promise.all(
+        retails.map((retail: any) =>
+          retail.update({ pdf_file: copyRetailPdfFile(retail.id, pdfFile) })
+        )
+      );
+
+      const uploadedPath = path.join("uploads", "pdf", pdfFile.filename);
+      if (fs.existsSync(uploadedPath)) {
+        fs.unlinkSync(uploadedPath);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Retails created successfully",
+      count: retails.length,
+      data: retails.map((retail) => retail.toJSON()),
+    });
+  } catch (err: any) {
+    console.error("Create Bulk Retail Error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to create retails", err);
+  }
+};
+
 export const getRetailsCurrUser = async (req: Request, res: Response) => {
   const { login_id } = req.params;
   try {
@@ -149,17 +381,33 @@ export const getRetailById = async (req: Request, res: Response) => {
 
 // ✅ UPDATE Retail
 export const updateRetail = async (req: Request, res: Response) => {
-  const { id, login_id, retail_details, retail_type, retail_compliance } =
-    req.body;
+  const body = parseRequestBody(req);
+  const {
+    id,
+    retail_id,
+    login_id,
+    loginId,
+    company_id,
+    companyId,
+    retail_details,
+    retail_type,
+    retail_compliance,
+    description,
+    status,
+    company_details,
+  } = body;
 
-  if (!id || !login_id) {
+  const retailId = id ?? retail_id;
+  const loginIdValue = login_id ?? loginId ?? company_id ?? companyId;
+
+  if (!retailId || !loginIdValue) {
     return sendErrorResponse(res, 400, "id and login_id are required");
   }
 
   try {
     // Check if record exists and belongs to this user
     const retail = await Retail.findOne({
-      where: { login_id: Number(login_id), id: Number(id) },
+      where: { login_id: Number(loginIdValue), id: Number(retailId) },
     });
 
     if (!retail) {
@@ -173,12 +421,25 @@ export const updateRetail = async (req: Request, res: Response) => {
         ? [retail_type]
         : [];
 
-    // Update record
-    await retail.update({
+    const updatePayload: any = {
       retail_details: retail_details || retail.retail_details,
-      retail_type: normalizedRetailType,
+      retail_type:
+        retail_type !== undefined ? normalizedRetailType : retail.retail_type,
       retail_compliance: retail_compliance || retail.retail_compliance,
-    });
+      description:
+        description !== undefined ? String(description || "") : retail.description || "",
+      status: status || retail.status,
+      company_details: company_details || retail.company_details,
+    };
+
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    if (pdfFile) {
+      updatePayload.pdf_file = moveRetailPdfFile(retail.id, pdfFile);
+    }
+
+    // Update record
+    await retail.update(updatePayload);
 
     res.status(200).json({
       success: true,

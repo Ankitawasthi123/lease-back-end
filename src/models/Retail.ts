@@ -7,6 +7,8 @@ class Retail extends Model {
   public retail_details!: object;
   public retail_type!: any[];
   public retail_compliance!: object;
+  public description!: string;
+  public pdf_file!: object | null;
   public status!: string;
   public company_details!: object;
   public created_date!: Date;
@@ -38,6 +40,15 @@ Retail.init(
       type: DataTypes.JSONB,
       allowNull: true,
       defaultValue: {},
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    pdf_file: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
     },
     status: {
       type: DataTypes.STRING,

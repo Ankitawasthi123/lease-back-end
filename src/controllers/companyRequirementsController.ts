@@ -1,36 +1,135 @@
-import { Router, Request, Response, response } from "express";
+import { Request, Response } from "express";
 import { protect } from "../middleware/authMiddleware";
 import { CompanyRequirements, Bid, User, Payment } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { Op } from "sequelize";
 import sequelize from "../config/data-source";
+import fs from "fs";
+import path from "path";
+
+const getBidTotalAmount = (bidDetails: any): number => {
+  const parseAmount = (value: any): number => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const cleaned = value.replace(/[^0-9.\-]/g, "").trim();
+      if (!cleaned) return 0;
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const amountKeys = [
+    "total_amount",
+    "totalAmount",
+    "total",
+    "bid_amount",
+    "bidAmount",
+    "bid_total",
+    "bidTotal",
+    "amount",
+    "totalPrice",
+    "grand_total",
+    "grandTotal",
+    "price",
+    "value",
+  ];
+
+  const lineArrayKeys = ["items", "line_items", "lineItems", "charges", "rates", "details"];
+
+  const searchValue = (value: any): number => {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+
+    if (typeof value === "number" || typeof value === "string") {
+      return parseAmount(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.reduce((sum, item) => sum + searchValue(item), 0);
+    }
+
+    if (typeof value === "object") {
+      for (const key of amountKeys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const amount = parseAmount((value as any)[key]);
+          if (amount !== 0) {
+            return amount;
+          }
+        }
+      }
+
+      for (const key of lineArrayKeys) {
+        const items = (value as any)[key];
+        if (Array.isArray(items)) {
+          return items.reduce((sum: number, item: any) => sum + searchValue(item), 0);
+        }
+      }
+
+      for (const key of Object.keys(value)) {
+        const nested = searchValue((value as any)[key]);
+        if (nested !== 0) {
+          return nested;
+        }
+      }
+    }
+
+    return 0;
+  };
+
+  return searchValue(bidDetails);
+};
 
 // Create a new company requirement
-export const createRequirement = async (req: Request, res: Response) => {
-  const {
-    warehouse_location,
-    warehouse_size,
-    warehouse_compliance,
-    material_details,
-    labour_details,
-    office_expenses,
-    company_id,
-    transport,
-    requirement_type,
-    bid_details,
-    distance,
-    status,
-  } = req.body;
-
-  if (!company_id) {
-    return sendErrorResponse(res, 400, "company_id is required");
+const safeParseJson = <T = any>(value: any): T => {
+  if (value === undefined || value === null || value === "undefined" || value === "null") {
+    return {} as T;
   }
 
-  if (!requirement_type) {
-    return sendErrorResponse(res, 400, "requirement_type is required");
+  if (typeof value === "object") {
+    return value as T;
   }
 
   try {
+    return JSON.parse(value);
+  } catch {
+    return {} as T;
+  }
+};
+
+export const createRequirement = async (req: Request, res: Response) => {
+  try {
+    // ✅ parse full JSON from "data"
+    const parsedBody = req.body.data ? JSON.parse(req.body.data) : req.body;
+
+    const {
+      warehouse_location,
+      warehouse_size,
+      warehouse_compliance,
+      material_details,
+      labour_details,
+      office_expenses,
+      company_id,
+      transport,
+      requirement_type,
+      bid_details,
+      distance,
+      status,
+      description,
+      miscellaneous,
+    } = parsedBody;
+
+    if (!company_id) {
+      return sendErrorResponse(res, 400, "company_id is required");
+    }
+
+    if (!requirement_type) {
+      return sendErrorResponse(res, 400, "requirement_type is required");
+    }
+
     const requirement = await CompanyRequirements.create({
       warehouse_location: warehouse_location || {},
       company_id: Number(company_id),
@@ -44,7 +143,42 @@ export const createRequirement = async (req: Request, res: Response) => {
       bid_details: bid_details || {},
       distance: distance || [],
       status: status || "submitted",
+      description: description || "",
+      miscellaneous:
+        miscellaneous && Object.keys(miscellaneous).length
+          ? miscellaneous
+          : { field1: "", field2: "", field3: "" },
+      pdf_file: null,
     });
+
+    // ✅ FILE HANDLING
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    if (pdfFile) {
+      const requirementPdfDir = path.join(
+        "uploads",
+        "pdf",
+        `requirement_${requirement.id}`
+      );
+
+      if (!fs.existsSync(requirementPdfDir)) {
+        fs.mkdirSync(requirementPdfDir, { recursive: true });
+      }
+
+      const currentPath = path.join("uploads", "pdf", pdfFile.filename);
+      const destinationPath = path.join(requirementPdfDir, pdfFile.filename);
+
+      fs.renameSync(currentPath, destinationPath);
+
+      const pdfMeta = {
+        filename: pdfFile.filename,
+        mimetype: pdfFile.mimetype,
+        size: pdfFile.size,
+        url: `/uploads/pdf/requirement_${requirement.id}/${pdfFile.filename}`,
+      };
+
+      await requirement.update({ pdf_file: pdfMeta });
+    }
 
     res.status(201).json({
       success: true,
@@ -58,26 +192,42 @@ export const createRequirement = async (req: Request, res: Response) => {
 };
 
 export const updateCompanyRequirements = async (req: Request, res: Response) => {
-  const {
-    id,
-    warehouse_location,
-    warehouse_size,
-    warehouse_compliance,
-    material_details,
-    labour_details,
-    office_expenses,
-    company_id,
-    transport,
-    requirement_type,
-    bid_details,
-    distance,
-  } = req.body;
-
-  if (!id || !company_id) {
-    return sendErrorResponse(res, 400, "id and company_id are required");
-  }
-
   try {
+    // ✅ parse full JSON from "data"
+    const parsedBody = req.body.data
+      ? { ...req.body, ...safeParseJson(req.body.data) }
+      : req.body;
+
+    const {
+      id: bodyId,
+      requirement_id,
+      requirementId,
+      warehouse_location,
+      warehouse_size,
+      warehouse_compliance,
+      material_details,
+      labour_details,
+      office_expenses,
+      company_id: bodyCompanyId,
+      companyId,
+      login_id,
+      loginId,
+      transport,
+      requirement_type,
+      bid_details,
+      distance,
+      status,
+      description,
+      miscellaneous,
+    } = parsedBody;
+
+    const id = bodyId ?? requirement_id ?? requirementId;
+    const company_id = bodyCompanyId ?? companyId ?? login_id ?? loginId;
+
+    if (!id || !company_id) {
+      return sendErrorResponse(res, 400, "id and company_id are required");
+    }
+
     const requirement = await CompanyRequirements.findOne({
       where: { id: Number(id), company_id: Number(company_id) },
     });
@@ -86,18 +236,81 @@ export const updateCompanyRequirements = async (req: Request, res: Response) => 
       return sendErrorResponse(res, 404, "Requirement not found");
     }
 
-    await requirement.update({
-      warehouse_location: warehouse_location || requirement.warehouse_location,
-      warehouse_size: warehouse_size || requirement.warehouse_size,
-      warehouse_compliance: warehouse_compliance || requirement.warehouse_compliance,
-      material_details: material_details || requirement.material_details,
-      labour_details: labour_details || requirement.labour_details,
-      office_expenses: office_expenses || requirement.office_expenses,
-      transport: transport || requirement.transport,
-      requirement_type: requirement_type || requirement.requirement_type,
-      bid_details: bid_details || requirement.bid_details,
-      distance: distance || requirement.distance,
-    });
+    const pdfFile = (req.file as Express.Multer.File | undefined) || null;
+
+    const getUpdatedValue = (value: any, currentValue: any, defaultValue: any) =>
+      value !== undefined ? value || defaultValue : currentValue ?? defaultValue;
+
+    const updatePayload: any = {
+      warehouse_location: getUpdatedValue(
+        warehouse_location,
+        requirement.warehouse_location,
+        {}
+      ),
+      warehouse_size: getUpdatedValue(warehouse_size, requirement.warehouse_size, {}),
+      warehouse_compliance: getUpdatedValue(
+        warehouse_compliance,
+        requirement.warehouse_compliance,
+        {}
+      ),
+      material_details: getUpdatedValue(
+        material_details,
+        requirement.material_details,
+        {}
+      ),
+      labour_details: getUpdatedValue(labour_details, requirement.labour_details, {}),
+      office_expenses: getUpdatedValue(
+        office_expenses,
+        requirement.office_expenses,
+        {}
+      ),
+      transport: getUpdatedValue(transport, requirement.transport, []),
+      requirement_type: getUpdatedValue(
+        requirement_type,
+        requirement.requirement_type,
+        ""
+      ),
+      bid_details: getUpdatedValue(bid_details, requirement.bid_details, {}),
+      distance: getUpdatedValue(distance, requirement.distance, []),
+      status: getUpdatedValue(status, requirement.status, "submitted"),
+      description:
+        description !== undefined
+          ? String(description || "")
+          : requirement.description || "",
+      miscellaneous:
+        miscellaneous !== undefined
+          ? miscellaneous && Object.keys(miscellaneous).length
+            ? miscellaneous
+            : { field1: "", field2: "", field3: "" }
+          : requirement.miscellaneous || { field1: "", field2: "", field3: "" },
+    };
+
+    // ✅ FILE UPDATE
+    if (pdfFile) {
+      const requirementPdfDir = path.join(
+        "uploads",
+        "pdf",
+        `requirement_${requirement.id}`
+      );
+
+      if (!fs.existsSync(requirementPdfDir)) {
+        fs.mkdirSync(requirementPdfDir, { recursive: true });
+      }
+
+      const currentPath = path.join("uploads", "pdf", pdfFile.filename);
+      const destinationPath = path.join(requirementPdfDir, pdfFile.filename);
+
+      fs.renameSync(currentPath, destinationPath);
+
+      updatePayload.pdf_file = {
+        filename: pdfFile.filename,
+        mimetype: pdfFile.mimetype,
+        size: pdfFile.size,
+        url: `/uploads/pdf/requirement_${requirement.id}/${pdfFile.filename}`,
+      };
+    }
+
+    await requirement.update(updatePayload);
 
     res.status(200).json({
       success: true,
@@ -278,27 +491,35 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
       return sendErrorResponse(res, 404, "Requirement not found");
     }
 
-    // Fetch related bids
+    // Fetch related bids and sort by total bid amount low-to-high
     const bids = await Bid.findAll({
       where: { requirement_id: requirementId },
     });
 
-    let filteredBids = bids;
-    // If the user is a 3PL, only keep their own bid details
-    if (isThreePlRole && requesterUserId) {
-      filteredBids = bids.map((bid: any) => {
-        if (Number(bid.pl_details?.id) === requesterUserId) {
-          return bid.toJSON();
-        } else {
-          return {
-            // ...bid.toJSON(),
-            bid_details: {},
-          };
+    const sortedBids = bids
+      .slice()
+      .sort((a: any, b: any) => {
+        const aAmount = getBidTotalAmount(a.bid_details || {});
+        const bAmount = getBidTotalAmount(b.bid_details || {});
+        if (aAmount !== bAmount) {
+          return aAmount - bAmount;
         }
+        return Number(a.id) - Number(b.id);
       });
-    } else {
-      filteredBids = bids.map((b: any) => b.toJSON());
-    }
+
+    const filteredBids = sortedBids.map((bid: any) => {
+      const bidJson = bid.toJSON();
+      if (isThreePlRole && requesterUserId) {
+        if (Number(bidJson.pl_details?.id) === requesterUserId) {
+          return bidJson;
+        }
+        return {
+          ...bidJson,
+          bid_details: {},
+        };
+      }
+      return bidJson;
+    });
 
     return res.status(200).json({
       success: true,
@@ -423,10 +644,12 @@ export const liveBids = async (req: Request, res: Response) => {
     }
 
     const { role } = user;
+    const normalizedRole = String(role || "").toLowerCase();
+    const isThreePlRole = ["threepl", "3pl", "three_pl"].includes(normalizedRole);
 
     // Fetch requirements
     let requirementsWhere: any = {};
-    if (role === "company") {
+    if (normalizedRole === "company") {
       requirementsWhere.company_id = login_id;
     }
 
@@ -439,16 +662,89 @@ export const liveBids = async (req: Request, res: Response) => {
       return res.status(200).json({ success: true, data: [] });
     }
 
+    const timeZone = process.env.LIVE_BIDS_TIMEZONE || "Asia/Kolkata";
+
+    const getTimeZoneOffsetMs = (date: Date): number => {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+
+      const parts = formatter.formatToParts(date).reduce(
+        (acc: Record<string, string>, part) => {
+          if (part.type !== "literal") {
+            acc[part.type] = part.value;
+          }
+          return acc;
+        },
+        {},
+      );
+
+      return (
+        Date.UTC(
+          Number(parts.year),
+          Number(parts.month) - 1,
+          Number(parts.day),
+          Number(parts.hour),
+          Number(parts.minute),
+          Number(parts.second),
+        ) - date.getTime()
+      );
+    };
+
+    const toUtcFromLocal = (
+      year: number,
+      month: number,
+      day: number,
+      hour = 0,
+      minute = 0,
+    ) => {
+      const localMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+      const offsetMs = getTimeZoneOffsetMs(new Date(localMs));
+      return new Date(localMs - offsetMs);
+    };
+
     const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(todayStart.getDate() + 1);
+    const localNowParts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(now)
+      .reduce((acc: Record<string, string>, part) => {
+        if (part.type !== "literal") {
+          acc[part.type] = part.value;
+        }
+        return acc;
+      }, {});
 
-    const parseBidProcessDateTime = (bidDetails: any): Date | null => {
-      const rawDate = bidDetails?.bid_process_date ?? bidDetails?.bidProcessDate;
-      const rawTime = bidDetails?.bid_process_time ?? bidDetails?.bidProcessTime;
+    const todayStart = toUtcFromLocal(
+      Number(localNowParts.year),
+      Number(localNowParts.month),
+      Number(localNowParts.day),
+      0,
+      0,
+    );
+    const tomorrowStart = toUtcFromLocal(
+      Number(localNowParts.year),
+      Number(localNowParts.month),
+      Number(localNowParts.day) + 1,
+      0,
+      0,
+    );
 
+    const parseBidDateTime = (rawDate: any, rawTime: any): Date | null => {
       if (!rawDate) {
         return null;
       }
@@ -459,41 +755,66 @@ export const liveBids = async (req: Request, res: Response) => {
         return null;
       }
 
-      if (!rawTime) {
-        return baseDate;
-      }
+      const year = baseDate.getFullYear();
+      const month = baseDate.getMonth() + 1;
+      const day = baseDate.getDate();
+      let hour = 0;
+      let minute = 0;
 
-      const rawTimeText = String(rawTime).trim();
-      let timeText = rawTimeText.toUpperCase();
-      const isMeridianTime = /(AM|PM)$/.test(timeText);
+      if (rawTime) {
+        const rawTimeText = String(rawTime).trim();
+        let timeText = rawTimeText.toUpperCase();
+        const isMeridianTime = /(AM|PM)$/.test(timeText);
 
-      if (isMeridianTime) {
-        const meridian = timeText.endsWith("PM") ? "PM" : "AM";
-        timeText = timeText.replace(/\s*(AM|PM)\s*$/, "");
-        const [hourStr, minuteStr = "0"] = timeText.split(":");
-        let hour = Number(hourStr);
-        const minute = Number(minuteStr);
+        if (isMeridianTime) {
+          const meridian = timeText.endsWith("PM") ? "PM" : "AM";
+          timeText = timeText.replace(/\s*(AM|PM)\s*$/, "");
+          const [hourStr, minuteStr = "0"] = timeText.split(":");
+          hour = Number(hourStr);
+          minute = Number(minuteStr);
 
-        if (Number.isNaN(hour) || Number.isNaN(minute)) {
-          return null;
+          if (Number.isNaN(hour) || Number.isNaN(minute)) {
+            return null;
+          }
+
+          if (meridian === "PM" && hour < 12) hour += 12;
+          if (meridian === "AM" && hour === 12) hour = 0;
+        } else {
+          const [hourStr, minuteStr = "0"] = timeText.split(":");
+          hour = Number(hourStr);
+          minute = Number(minuteStr);
+          if (Number.isNaN(hour) || Number.isNaN(minute)) {
+            return null;
+          }
         }
-
-        if (meridian === "PM" && hour < 12) hour += 12;
-        if (meridian === "AM" && hour === 12) hour = 0;
-
-        baseDate.setHours(hour, minute, 0, 0);
-        return baseDate;
       }
 
-      const [hourStr, minuteStr = "0"] = timeText.split(":");
-      const hour = Number(hourStr);
-      const minute = Number(minuteStr);
-      if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      return toUtcFromLocal(year, month, day, hour, minute);
+    };
+
+    const parseBidProcessDateTime = (bidDetails: any): Date | null => {
+      return parseBidDateTime(
+        bidDetails?.bid_process_date ?? bidDetails?.bidProcessDate,
+        bidDetails?.bid_process_time ?? bidDetails?.bidProcessTime
+      );
+    };
+
+    const parseBidProcessEndDateTime = (bidDetails: any): Date | null => {
+      const rawEndTime =
+        bidDetails?.bid_process_end_time ??
+        bidDetails?.bidProcessEndTime;
+
+      if (!rawEndTime) {
         return null;
       }
 
-      baseDate.setHours(hour, minute, 0, 0);
-      return baseDate;
+      return parseBidDateTime(
+        bidDetails?.bid_process_end_date ??
+          bidDetails?.bidProcessEndDate ??
+          bidDetails?.bid_process_date ??
+          bidDetails?.bidProcessDate,
+        rawEndTime
+      );
     };
 
     const todayStartedRequirements = requirements.filter((r: any) => {
@@ -501,6 +822,12 @@ export const liveBids = async (req: Request, res: Response) => {
       if (!processDateTime) {
         return false;
       }
+
+      const processEndDateTime = parseBidProcessEndDateTime(r.bid_details || {});
+      if (processEndDateTime && processEndDateTime <= now) {
+        return false;
+      }
+
       return processDateTime >= todayStart && processDateTime < tomorrowStart && processDateTime <= now;
     });
 
@@ -514,7 +841,7 @@ export const liveBids = async (req: Request, res: Response) => {
     // Fetch bids
     let bids: any[] = [];
     
-    if (role === "threepl") {
+    if (isThreePlRole) {
       // For 3PL, filter bids manually
       const allBids = await Bid.findAll({
         where: {
@@ -522,7 +849,7 @@ export const liveBids = async (req: Request, res: Response) => {
         },
         order: [["created_date", "DESC"]],
       });
-      bids = allBids.filter((b: any) => b.pl_details?.id === login_id);
+      bids = allBids.filter((b: any) => Number(b.pl_details?.id) === login_id);
     } else {
       bids = await Bid.findAll({
         where: {
@@ -538,7 +865,7 @@ export const liveBids = async (req: Request, res: Response) => {
         const reqBids = bids.filter((bid: any) => bid.requirement_id === req.id);
 
         // For 3PL: skip this requirement if they have not placed any bid
-        if (role === "threepl" && !reqBids.some((bid: any) => bid.pl_details?.id === login_id)) {
+        if (isThreePlRole && !reqBids.some((bid: any) => Number(bid.pl_details?.id) === login_id)) {
           return null;
         }
 

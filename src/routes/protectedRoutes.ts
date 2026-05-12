@@ -32,6 +32,7 @@ import {
   getWarehousesLocationByUser,
 } from "../controllers/warehouseController";
 import {
+  createBulkRetail,
   createRetail,
   getAllRetailsByLocation,
   getAllRetailsByCompany,
@@ -106,8 +107,8 @@ const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-router.post("/company/create-requirement", protect, createRequirement);
-router.post("/company/update-requirments", protect, updateCompanyRequirements);
+router.post("/company/create-requirement", protect, upload.single("pdf_file"), createRequirement);
+router.post("/company/update-requirments", protect, upload.single("pdf_file"), updateCompanyRequirements);
 router.post("/company/delete-requirments", protect, deleteCompanyRequirements);
 router.post("/company/requirement", protect, getCurrRequirment);
 router.post(
@@ -136,7 +137,7 @@ router.post("/bids/get-bid-byid", protect, getBidsForUserAndCompany);
 router.post("/bids/bid-company-list", protect, getBidsCompanyList);
 router.delete("/bids/delete-bid/:bid_id", protect, deleteBid);
 
-router.post("/warehouse/create-warehouse", protect, createWarehouse);
+router.post("/warehouse/create-warehouse", protect, upload.single("pdf_file"), createWarehouse);
 router.get("/warehouse/warehouse-list", protect, getAllWarehousesList);
 router.get("/warehouse/warehouse-threepl-list", protect, getAllWarehousesThreePlList);
 router.get("/warehouse/warehouse-user-list", protect, getWarehousesCurrUser);
@@ -150,7 +151,7 @@ router.get(
   protect, 
   getWarehouseCompanyList, 
 );
-router.put("/warehouse/update", protect, updateWarehouse);
+router.put("/warehouse/update", protect, upload.single("pdf_file"), updateWarehouse);
 router.delete("/warehouse/delete", protect, deleteWarehouse);
 router.get(
   "/warehouse/warehouse-user-locations/:login_id", // ✅ Add leading slash
@@ -158,7 +159,8 @@ router.get(
   getWarehousesLocationByUser,
 );
 
-router.post("/retail/create-retail", protect, createRetail);
+router.post("/retail/create-retail", protect, upload.single("pdf_file"), createRetail);
+router.post("/retail/create-bulk-retail", protect, upload.single("pdf_file"), createBulkRetail);
 router.get(
   "/retail/retail-list-location",
   protect,
@@ -173,7 +175,7 @@ router.get("/retail/retail-user-list", protect, getRetailsCurrUser);
 router.get("/retail/retail-details/:login_id/:id", protect, getRetailById);
 router.get("/retail/retail-company-list", protect, getRetailCompanyList);
 router.get("/retail/retail-user-location", protect, getUserRetailsLocation);
-router.put("/retail/update", protect, updateRetail);
+router.put("/retail/update", protect, upload.single("pdf_file"), updateRetail);
 router.delete("/retail/:retail_id/:login_id", deleteRetail);
 
 router.post("/pitch/create-pitch", protect, cpUpload, minifyUploadedImages, createPitch);
