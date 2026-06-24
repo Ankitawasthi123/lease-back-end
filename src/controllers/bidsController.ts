@@ -2,10 +2,20 @@ import { Request, Response } from "express";
 import { Op } from "sequelize";
 import { Bid, CompanyRequirements, User } from "../models";
 
+const getPlId = (plDetails: any): number | null => {
+  const rawId =
+    plDetails?.id ??
+    plDetails?.login_id ??
+    plDetails?.loginId ??
+    plDetails?.userId ??
+    plDetails?.user_id;
+  const numericId = Number(rawId);
+  return Number.isFinite(numericId) ? numericId : null;
+};
+
 export const createBid = async (req: Request, res: Response) => {
   try {
     const {
-      bid_id,
       bid_details,
       bid_type,
       requirement_id,
@@ -29,35 +39,44 @@ export const createBid = async (req: Request, res: Response) => {
     }
 
     const bidStatus = status || "PENDING";
+    const incomingRequirementId = Number(requirement_id);
+    const incomingPlId = getPlId(pl_details);
 
-    let bid: any;
-
-    if (bid_id) {
-      // ✅ UPDATE bid
-      bid = await Bid.findByPk(Number(bid_id));
-      if (!bid) {
-        return res.status(404).json({ message: "Bid not found" });
-      }
-      await bid.update({
-        requirement_id: Number(requirement_id),
-        pl_details,
-        bid_type,
-        bid_details,
-        status: bidStatus,
-      });
-    } else {
-      // ✅ CREATE bid
-      bid = await Bid.create({
-        requirement_id: Number(requirement_id),
-        pl_details,
-        bid_type,
-        bid_details,
-        status: bidStatus,
-      });
+    if (!Number.isFinite(incomingRequirementId)) {
+      return res.status(400).json({ message: "requirement_id must be a valid number" });
     }
 
+    if (incomingPlId == null) {
+      return res.status(400).json({ message: "pl_details.id is required" });
+    }
+
+    const requirementBids = await Bid.findAll({
+      where: { requirement_id: incomingRequirementId },
+      order: [["created_date", "DESC"]],
+    });
+
+    const existingBid: any = requirementBids.find(
+      (item: any) => getPlId(item.pl_details) === incomingPlId
+    );
+
+    const bid = existingBid
+      ? await existingBid.update({
+          requirement_id: incomingRequirementId,
+          pl_details,
+          bid_type,
+          bid_details,
+          status: bidStatus,
+        })
+      : await Bid.create({
+          requirement_id: incomingRequirementId,
+          pl_details,
+          bid_type,
+          bid_details,
+          status: bidStatus,
+        });
+
     return res.status(200).json({
-      message: bid_id ? "Bid updated successfully" : "Bid created successfully",
+      message: existingBid ? "Bid updated successfully" : "Bid created successfully",
       bid: bid.toJSON(),
     });
   } catch (error: any) {
@@ -113,7 +132,7 @@ export const getBidsForUserAndCompany = async (req: Request, res: Response) => {
         },
         order: [["created_date", "DESC"]],
       });
-      bids = allBids.filter((b: any) => b.pl_details?.id === loginIdNum);
+      bids = allBids.filter((b: any) => getPlId(b.pl_details) === loginIdNum);
 
       return res.status(200).json({
         bids: bids.map((b: any) => {

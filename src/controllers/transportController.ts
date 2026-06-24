@@ -151,6 +151,64 @@ const normalizeTransportCompanyDetails = (companyDetails: any) => {
   };
 };
 
+const sortObjectKeys = (value: any): any => {
+  if (Array.isArray(value)) {
+    return value.map(sortObjectKeys);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc: any, key) => {
+        acc[key] = sortObjectKeys(value[key]);
+        return acc;
+      }, {});
+  }
+
+  return value;
+};
+
+const getDeduplicationKey = (value: any) => JSON.stringify(sortObjectKeys(value));
+
+const removeDuplicateArrayItems = (items: any[]) => {
+  const seen = new Set<string>();
+
+  return items
+    .map(normalizeVolumetric)
+    .filter((item) => {
+      const key = getDeduplicationKey(item);
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+};
+
+const normalizeVolumetric = (value: any): any => {
+  if (Array.isArray(value)) {
+    return removeDuplicateArrayItems(value);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.keys(value).reduce((acc: any, key) => {
+      acc[key] = normalizeVolumetric(value[key]);
+      return acc;
+    }, {});
+  }
+
+  return value;
+};
+
+const serializeTransport = (transport: any) => {
+  const data = transport.toJSON();
+  return {
+    ...data,
+    volumetric: normalizeVolumetric(data.volumetric ?? {}),
+  };
+};
+
 const mapTransportPayload = (payload: any) => ({
   company_details:
     payload.companyDetails ??
@@ -169,7 +227,7 @@ const mapTransportPayload = (payload: any) => ({
     payload.freightRelatedServices ?? payload.freight_related_services ?? {},
   matrices: payload.matrices ?? {},
   pickup_delivery: payload.pickupDelivery ?? payload.pickup_delivery ?? {},
-  volumetric: payload.volumetric ?? {},
+  volumetric: normalizeVolumetric(payload.volumetric ?? {}),
   risk_information: payload.riskInformation ?? payload.risk_information ?? {},
   owner_risk_slab: payload.ownerRiskSlab ?? payload.owner_risk_slab ?? [],
 });
@@ -191,7 +249,7 @@ export const createTransport = async (req: Request, res: Response) => {
     return res.status(201).json({
       success: true,
       message: "Transport created successfully",
-      data: transport.toJSON(),
+      data: serializeTransport(transport),
     });
   } catch (err: any) {
     console.error("Create transport error:", err.message);
@@ -216,7 +274,7 @@ export const getTransportById = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      data: transport.toJSON(),
+      data: serializeTransport(transport),
     });
   } catch (err: any) {
     console.error("Get transport error:", err.message);
@@ -234,7 +292,7 @@ export const getTransportList = async (_req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      data: transports.map((item) => item.toJSON()),
+      data: transports.map(serializeTransport),
     });
   } catch (err: any) {
     console.error("Get transport list error:", err.message);
@@ -278,7 +336,7 @@ export const getApprovedTransportsForOwnerAndAgent = async (
     return res.status(200).json({
       success: true,
       count: filteredTransports.length,
-      data: filteredTransports.map((t) => t.toJSON()),
+      data: filteredTransports.map(serializeTransport),
     });
   } catch (err: any) {
     console.error("Get approved transport list error:", err.message);
@@ -454,7 +512,7 @@ export const updateTransport = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: "Transport updated successfully",
-      data: transport.toJSON(),
+      data: serializeTransport(transport),
     });
   } catch (err: any) {
     console.error("Update transport error:", err.message);

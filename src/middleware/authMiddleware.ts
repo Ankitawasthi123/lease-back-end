@@ -17,6 +17,29 @@ interface JwtPayloadCustom {
   [key: string]: any;
 }
 
+const ACCESS_TOKEN_MAX_AGE_MS = 30 * 60 * 1000;
+
+const issueAccessTokenFromRefresh = (
+  refreshToken: string,
+  res: Response,
+): JwtPayloadCustom => {
+  const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayloadCustom;
+
+  const newAccessToken = jwt.sign({ id: decoded.id ?? decoded.userId }, JWT_SECRET, {
+    expiresIn: "30m",
+  });
+
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookie("token", newAccessToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "strict" : "lax",
+    maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+  });
+
+  return decoded;
+};
+
 export const protect: RequestHandler = (req, res, next) => {
   const token = (req as any).cookies?.token;
   const refreshToken = (req as any).cookies?.refreshToken;
@@ -25,34 +48,27 @@ export const protect: RequestHandler = (req, res, next) => {
     return res.status(401).json({ message: "Not authorized, no token" });
   }
 
+  if (!token && refreshToken) {
+    try {
+      (req as any).user = issueAccessTokenFromRefresh(refreshToken, res);
+      return next();
+    } catch {
+      return res.status(401).json({ message: "Not authorized, token refresh failed" });
+    }
+  }
+
   try {
     // Try to verify access token
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayloadCustom;
     (req as any).user = decoded;
     return next();
   } catch (error: any) {
-    // If access token expired but refresh token exists, try to refresh
-    if (error.name === "TokenExpiredError" && refreshToken) {
+    // If the 7-day refresh token is still valid, keep the user session alive.
+    if (refreshToken) {
       try {
-        const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayloadCustom;
-        
-        // Issue new access token (15 minutes)
-        const newAccessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-          expiresIn: "15m",
-        });
-
-        const isProd = process.env.NODE_ENV === "production";
-        // Update token cookie
-        res.cookie("token", newAccessToken, {
-          httpOnly: true,
-          secure: isProd,
-          sameSite: isProd ? "strict" : "lax",
-          maxAge: 15 * 60 * 1000, // 15 minutes
-        });
-
-        (req as any).user = decoded;
+        (req as any).user = issueAccessTokenFromRefresh(refreshToken, res);
         return next();
-      } catch (refreshError) {
+      } catch {
         return res.status(401).json({ message: "Not authorized, token refresh failed" });
       }
     }

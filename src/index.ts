@@ -4,7 +4,6 @@ import cors from 'cors';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import hpp from 'hpp';
 import config from './config/env';
 import sequelize from './config/data-source';
@@ -32,37 +31,29 @@ app.use(hpp());
 app.set('trust proxy', 1);
 
 // Global limiter – 150 req / 15 min per IP
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 150,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many requests, please try again later.' },
-  skip: (req) => req.path === '/api/auth/login',
-});
-app.use(globalLimiter);
 
 // Auth limiter – 15 req / 15 min per IP (covers /api/auth/*)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many auth requests, please try again later.' },
-  skipSuccessfulRequests: true, // only count failed attempts toward the limit
-  skip: (req) => req.path === '/login',
-});
 
 // Login-specific limiter – 10 req / 15 min (extra-tight for brute-force)
-app.use(
-  '/uploads',
-  (_req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-  },
-  express.static(path.join(__dirname, '..', 'uploads'))
-);
+const uploadsRoot = path.join(__dirname, '..', 'uploads');
+const setUploadHeaders: express.RequestHandler = (_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+};
+
+app.use('/uploads', setUploadHeaders, express.static(uploadsRoot));
+
+app.get('/uploads/:filename', setUploadHeaders, (req, res, next) => {
+  const safeFilename = path.basename(req.params.filename);
+  const legacyImagePath = path.join(uploadsRoot, 'images', safeFilename);
+
+  res.sendFile(legacyImagePath, (err) => {
+    if (err) {
+      next();
+    }
+  });
+});
 
 const configuredOrigins = String(config.CLIENT_URL)
   .split(",")
@@ -97,9 +88,6 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 app.use(express.json());
-
-// Auth-wide rate limiter applied before routes. Login is skipped.
-app.use('/api/auth', authLimiter);
 
 app.use('/api', userRoutes);
 app.use('/api/auth', authRoutes);

@@ -24,6 +24,10 @@ const getBidTotalAmount = (bidDetails: any): number => {
   const amountKeys = [
     "total_amount",
     "totalAmount",
+    "total_costing",
+    "totalCosting",
+    "total_cost",
+    "totalCost",
     "total",
     "bid_amount",
     "bidAmount",
@@ -81,6 +85,28 @@ const getBidTotalAmount = (bidDetails: any): number => {
   };
 
   return searchValue(bidDetails);
+};
+
+const getBidPlId = (bid: any): number | null => {
+  const rawId =
+    bid?.pl_details?.id ??
+    bid?.pl_details?.login_id ??
+    bid?.pl_details?.loginId ??
+    bid?.pl_details?.userId ??
+    bid?.pl_details?.user_id;
+  const numericId = Number(rawId);
+  return Number.isFinite(numericId) ? numericId : null;
+};
+
+const sortBidsByTotalAmount = <T extends { id?: number; bid_details?: any }>(bids: T[]): T[] => {
+  return bids.slice().sort((a: any, b: any) => {
+    const aAmount = getBidTotalAmount(a.bid_details || {});
+    const bAmount = getBidTotalAmount(b.bid_details || {});
+    if (aAmount !== bAmount) {
+      return aAmount - bAmount;
+    }
+    return Number(a.id) - Number(b.id);
+  });
 };
 
 // Create a new company requirement
@@ -496,21 +522,12 @@ export const getRequirementDetails = async (req: Request, res: Response) => {
       where: { requirement_id: requirementId },
     });
 
-    const sortedBids = bids
-      .slice()
-      .sort((a: any, b: any) => {
-        const aAmount = getBidTotalAmount(a.bid_details || {});
-        const bAmount = getBidTotalAmount(b.bid_details || {});
-        if (aAmount !== bAmount) {
-          return aAmount - bAmount;
-        }
-        return Number(a.id) - Number(b.id);
-      });
+    const sortedBids = sortBidsByTotalAmount(bids);
 
     const filteredBids = sortedBids.map((bid: any) => {
       const bidJson = bid.toJSON();
       if (isThreePlRole && requesterUserId) {
-        if (Number(bidJson.pl_details?.id) === requesterUserId) {
+        if (getBidPlId(bidJson) === requesterUserId) {
           return bidJson;
         }
         return {
@@ -838,40 +855,38 @@ export const liveBids = async (req: Request, res: Response) => {
     // Collect requirement IDs
     const requirementIds = todayStartedRequirements.map((r: any) => r.id);
 
-    // Fetch bids
-    let bids: any[] = [];
-    
-    if (isThreePlRole) {
-      // For 3PL, filter bids manually
-      const allBids = await Bid.findAll({
-        where: {
-          requirement_id: { [Op.in]: requirementIds },
-        },
-        order: [["created_date", "DESC"]],
-      });
-      bids = allBids.filter((b: any) => Number(b.pl_details?.id) === login_id);
-    } else {
-      bids = await Bid.findAll({
-        where: {
-          requirement_id: { [Op.in]: requirementIds },
-        },
-        order: [["created_date", "DESC"]],
-      });
-    }
+    // Fetch all bids so rank labels are based on the complete competition order.
+    const bids = await Bid.findAll({
+      where: {
+        requirement_id: { [Op.in]: requirementIds },
+      },
+      order: [["created_date", "DESC"]],
+    });
 
     // Attach bids to requirements
     const enrichedRequirements = todayStartedRequirements
       .map((req: any) => {
-        const reqBids = bids.filter((bid: any) => bid.requirement_id === req.id);
+        const rankedReqBids = sortBidsByTotalAmount(
+          bids.filter((bid: any) => Number(bid.requirement_id) === Number(req.id))
+        ).map((bid: any, index: number) => ({
+          ...bid.toJSON(),
+          total_bid_amount: getBidTotalAmount(bid.bid_details || {}),
+          live_bid_rank: index + 1,
+          live_bid_label: `L${index + 1}`,
+        }));
+
+        const reqBids = isThreePlRole
+          ? rankedReqBids.filter((bid: any) => getBidPlId(bid) === login_id)
+          : rankedReqBids;
 
         // For 3PL: skip this requirement if they have not placed any bid
-        if (isThreePlRole && !reqBids.some((bid: any) => Number(bid.pl_details?.id) === login_id)) {
+        if (isThreePlRole && reqBids.length === 0) {
           return null;
         }
 
         return {
           ...req.toJSON(),
-          bids: reqBids.map((b: any) => b.toJSON()),
+          bids: reqBids,
         };
       })
       .filter(Boolean);

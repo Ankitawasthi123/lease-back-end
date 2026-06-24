@@ -10,10 +10,24 @@ import { randomBytes, createHash } from "crypto";
 import nodemailer from "nodemailer";
 import multer from "multer";
 import twilio from "twilio";
+import fs from "fs";
+import path from "path";
 import config from "../config/env";
 
 const JWT_SECRET = config.JWT_SECRET;
 const JWT_REFRESH_SECRET = config.JWT_REFRESH_SECRET;
+const ACCESS_TOKEN_MAX_AGE_MS = 30 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const getAuthCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === "production";
+
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? ("strict" as const) : ("lax" as const),
+  };
+};
 
 /* -------------------- Twilio -------------------- */
 const client = twilio(
@@ -38,14 +52,14 @@ export const sendMobileOtp = async (phone: string, otp: string) => {
 
 const sendEmailOtp = async (email: string, otp: string) => {
   if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
-    console.warn("SMTP configuration missing. Skipping email OTP.");
-    return;
+    throw new Error("SMTP configuration missing. Cannot send email OTP.");
   }
 
+  const smtpPort = Number(config.SMTP_PORT || 587);
   const transporter = nodemailer.createTransport({
     host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: false, // true for 465, false for 587
+    port: smtpPort,
+    secure: smtpPort === 465,
     auth: {
       user: config.SMTP_USER,
       pass: config.SMTP_PASS,
@@ -77,6 +91,30 @@ const generateOtp = (): string => {
 export const getOtpExpiry = (minutesValid = 5): Date => {
   return new Date(Date.now() + minutesValid * 60 * 1000);
 };
+
+const renameUserUpload = async (
+  file: Express.Multer.File | undefined,
+  userId: number,
+) => {
+  if (!file) {
+    return null;
+  }
+
+  const ext = path.extname(file.filename || file.originalname);
+  const filename = `${userId}-${file.fieldname}${ext}`;
+  const currentPath = file.path || path.join("uploads", file.filename);
+  const destinationPath = path.join("uploads", filename);
+
+  if (path.resolve(currentPath) !== path.resolve(destinationPath)) {
+    await fs.promises.unlink(destinationPath).catch(() => undefined);
+    await fs.promises.rename(currentPath, destinationPath);
+    file.filename = filename;
+    file.path = destinationPath;
+  }
+
+  return filename;
+};
+
 /* -------------------- REGISTER -------------------- */
 export const registerUser = async (req: Request, res: Response) => {
   const {
@@ -122,9 +160,23 @@ export const registerUser = async (req: Request, res: Response) => {
       email_verified: false,
     });
 
-    // Send OTPs asynchronously
-    sendEmailOtp(email, emailOtp);
-    sendMobileOtp(contact_number, mobileOtp);
+    try {
+      await sendEmailOtp(email, emailOtp);
+    } catch (mailError) {
+      console.error("Failed to send signup email OTP:", mailError);
+      await user.update({
+        email_otp: null,
+        mobile_otp: null,
+        otp_expires_at: null,
+      });
+      return res.status(502).json({
+        message: "Failed to send email OTP. Please try again later.",
+      });
+    }
+
+    sendMobileOtp(contact_number, mobileOtp).catch((mobileError) => {
+      console.error("Failed to send signup mobile OTP:", mobileError);
+    });
 
     // Schedule OTP cleanup after expiry
     const ttl = otpExpiry.getTime() - new Date().getTime(); // milliseconds until expiry
@@ -221,14 +273,13 @@ export const completeRegistration = async (req: Request, res: Response) => {
     const incomingFillerInfo = JSON.parse(req.body.filler_info || "{}");
 
     /* ================= FILES ================= */
-    const visitingCardBinary =
-      (req.files as any)?.["visiting_card_file"]?.[0]?.filename;
+    const visitingCardFile = (req.files as any)?.["visiting_card_file"]?.[0];
+    const digitalSignatureFile = (req.files as any)?.["digital_signature_file"]?.[0];
+    const profileImageFile = (req.files as any)?.["profile_image"]?.[0];
 
-    const digitalSignatureBinary =
-      (req.files as any)?.["digital_signature_file"]?.[0]?.filename;
-
-    const profileImageBinary =
-      (req.files as any)?.["profile_image"]?.[0]?.filename;
+    const visitingCardBinary = await renameUserUpload(visitingCardFile, userId);
+    const digitalSignatureBinary = await renameUserUpload(digitalSignatureFile, userId);
+    const profileImageBinary = await renameUserUpload(profileImageFile, userId);
 
     /* ================= FETCH EXISTING USER ================= */
     const user = await User.findByPk(userId);
@@ -446,20 +497,14 @@ export const loginUser = async (req: Request, res: Response) => {
     const accessToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "30m" });
     const refreshToken = jwt.sign({ id: user.id }, JWT_REFRESH_SECRET, { expiresIn: "7d" });
 
-    const isProd = process.env.NODE_ENV === "production";
-
     res.cookie("token", accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "strict" : "lax",
-      maxAge: 30 * 60 * 1000, // 30 minutes
+      ...getAuthCookieOptions(),
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
 
     res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "strict" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      ...getAuthCookieOptions(),
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
     });
 
     // Return safe user (exclude sensitive fields)
@@ -491,17 +536,14 @@ export const refreshToken = (req: Request, res: Response) => {
         .json({ message: "Invalid or expired refresh token" });
     }
 
-    // Issue new short-lived access token (15 minutes)
+    // Issue a new short-lived access token while the 7-day refresh token is valid.
     const accessToken = jwt.sign({ id: decoded.id }, JWT_SECRET, {
-      expiresIn: "15m",
+      expiresIn: "30m",
     });
 
-    const isProd = process.env.NODE_ENV === "production";
     res.cookie("token", accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "strict" : "lax",
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      ...getAuthCookieOptions(),
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
 
     res.json({
@@ -512,8 +554,8 @@ export const refreshToken = (req: Request, res: Response) => {
 };
 
 export const logOutUser = async (req: Request, res: Response) => {
-  res.clearCookie("token");
-  res.clearCookie("refreshToken");
+  res.clearCookie("token", getAuthCookieOptions());
+  res.clearCookie("refreshToken", getAuthCookieOptions());
   res.json({ message: "Logged out successfully" });
 };
 

@@ -41,7 +41,7 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const userId = req.body.userId || "unknown";
+    const userId = req.body.userId || req.body.user_id || req.body.login_id || "unknown";
     const fieldName = file.fieldname;
     const ext = path.extname(file.originalname);
     const filename = `${userId}-${fieldName}${ext}`;
