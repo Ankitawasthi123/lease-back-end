@@ -13,6 +13,9 @@ import RetailPitch from './RetailPitch';
 import Payment from './Payment';
 import QueryMessage from './QueryMessage';
 import Transport from './Transport';
+import ManpowerRequirement from './ManpowerRequirement';
+import ManpowerBid from './ManpowerBid';
+import ManpowerBidAward from './ManpowerBidAward';
 
 // Set up associations
 try {
@@ -27,12 +30,23 @@ try {
 		Warehouse.hasMany(Pitch, { foreignKey: 'warehouse_id', as: 'pitches' });
 		Pitch.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 	}
+
+	if (typeof ManpowerRequirement.hasMany === 'function' && typeof ManpowerBid.belongsTo === 'function') {
+		ManpowerRequirement.hasMany(ManpowerBid, {
+			foreignKey: 'manpower_requirement_id',
+			as: 'bids',
+		});
+		ManpowerBid.belongsTo(ManpowerRequirement, {
+			foreignKey: 'manpower_requirement_id',
+			as: 'requirement',
+		});
+	}
 } catch (err) {
 	// fail silently during type-only builds or when sequelize instances aren't fully initialized
 	// runtime association errors will be surfaced in server logs
 }
 
-export { User, CompanyRequirements, Bid, Warehouse, Pitch, Retail, RetailPitch, Payment, QueryMessage, Transport };
+export { User, CompanyRequirements, Bid, Warehouse, Pitch, Retail, RetailPitch, Payment, QueryMessage, Transport, ManpowerRequirement, ManpowerBid, ManpowerBidAward };
 
 // Type exports for TypeScript support
 export * from './Warehouse';

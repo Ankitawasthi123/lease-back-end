@@ -16,6 +16,7 @@ import adminRoutes from "./routes/adminRoutes"
 import payuRoutes from "./routes/payuRoutes";
 import razorpayRoutes from "./routes/razorpayRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
+import manpowerRoutes from "./routes/manpowerRoutes";
 import { errorHandler, notFound } from './middleware/errorHandler';
 
 dotenv.config();
@@ -97,6 +98,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api', payuRoutes);  // legacy endpoints forwarded to Razorpay implementation
 app.use('/api', razorpayRoutes);
+app.use('/api/manpower', manpowerRoutes);
 
 // dump registered routes for debugging
 app._router.stack

@@ -725,8 +725,16 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
 
     await user.save();
 
+    const resetToken = jwt.sign(
+      { id: user.id, purpose: "password_reset" },
+      JWT_SECRET,
+      { expiresIn: "10m" }
+    );
+
     return res.status(200).json({
       message: "OTP verified successfully",
+      resetToken,
+      userId: user.id,
     });
   } catch (error) {
     console.error("verifyEmailOtp error:", error);
@@ -735,20 +743,58 @@ export const verifyEmailOtp = async (req: Request, res: Response) => {
 };
 
 export async function forgotPassword(req: Request, res: Response) {
-  const { newPassword, userId }: { newPassword: string; userId: number } = req.body;
+  const rawUserId = req.body.userId ?? req.body.user_id;
+  const userId = rawUserId ? Number(rawUserId) : undefined;
+  const email = req.body.email ? String(req.body.email).trim().toLowerCase() : undefined;
+  const emailOtp = req.body.email_otp ?? req.body.otp;
+  const resetToken = req.body.resetToken;
+  const newPassword = req.body.newPassword ?? req.body.password;
 
-  if (!newPassword || !userId) {
+  if (!newPassword || (!userId && !email && !resetToken)) {
     return res
       .status(400)
-      .json({ message: "User ID and new password are required." });
+      .json({ message: "User ID, email, or reset token and new password are required." });
   }
 
   try {
+    let resetTokenUserId: number | undefined;
+
+    if (resetToken) {
+      try {
+        const decoded = jwt.verify(resetToken, JWT_SECRET) as { id?: number; purpose?: string };
+
+        if (decoded.purpose !== "password_reset" || !decoded.id) {
+          return res.status(400).json({ message: "Invalid reset token" });
+        }
+
+        resetTokenUserId = decoded.id;
+      } catch (_err) {
+        return res.status(400).json({ message: "Invalid or expired reset token" });
+      }
+    }
+
     // 1️⃣ Check if user exists
-    const user = await User.findByPk(userId);
+    const lookupUserId = resetTokenUserId ?? userId;
+    const user = lookupUserId
+      ? await User.findByPk(lookupUserId)
+      : await User.findOne({ where: { email } });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!resetToken && !lookupUserId && (email || emailOtp)) {
+      if (!emailOtp) {
+        return res.status(400).json({ message: "OTP is required" });
+      }
+
+      if (!user.otp_expires_at || new Date(user.otp_expires_at) < new Date()) {
+        return res.status(400).json({ message: "OTP expired" });
+      }
+
+      if (user.email_otp !== emailOtp) {
+        return res.status(400).json({ message: "Invalid email OTP" });
+      }
     }
 
     // 2️⃣ Hash new password
@@ -757,6 +803,9 @@ export async function forgotPassword(req: Request, res: Response) {
     // 3️⃣ Update password
     await user.update({
       password: hashedPassword,
+      email_otp: null,
+      mobile_otp: null,
+      otp_expires_at: null,
     });
 
     res.json({ message: "Your password has been reset successfully." });

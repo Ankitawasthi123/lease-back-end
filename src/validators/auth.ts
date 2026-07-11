@@ -75,9 +75,36 @@ export const resendOtpSchema = z.object({
 
 // ── POST /api/auth/forgot-password ──────────────────────────────────────────
 export const forgotPasswordSchema = z.object({
-  body: z.object({
-    email: emailField,
-  }),
+  body: z
+    .object({
+      userId: z
+        .preprocess(
+          (val) => typeof val === 'string' ? Number(val) : val,
+          z.number().int().positive('userId must be a positive integer')
+        )
+        .optional(),
+      user_id: z
+        .preprocess(
+          (val) => typeof val === 'string' ? Number(val) : val,
+          z.number().int().positive('user_id must be a positive integer')
+        )
+        .optional(),
+      email: emailField.optional(),
+      email_otp: otpField.optional(),
+      otp: otpField.optional(),
+      resetToken: z.string().min(1, 'Reset token is required').optional(),
+      newPassword: passwordField.optional(),
+      password: passwordField.optional(),
+    })
+    .refine((d) => d.userId || d.user_id || d.email || d.resetToken, {
+      message: 'userId, email, or resetToken is required',
+    })
+    .refine((d) => d.newPassword || d.password, {
+      message: 'New password is required',
+    })
+    .refine((d) => d.userId || d.user_id || d.resetToken || (d.email && (d.email_otp || d.otp)), {
+      message: 'OTP or resetToken is required when resetting password by email',
+    }),
 });
 
 // ── POST /api/auth/send-email-otp ────────────────────────────────────────────
