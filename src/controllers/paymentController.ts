@@ -3,6 +3,7 @@ import { Payment, User } from "../models";
 import { sendErrorResponse } from "../utils/errorResponse";
 import { sendPaymentInvoiceEmail } from "../utils/invoiceMailer";
 import { ensurePaymentMetadataColumns } from "../utils/paymentSchema";
+import { resolvePaymentPlanDetails } from "../utils/paymentPlans";
 
 interface UserInvoiceData {
 	email: string | null;
@@ -18,6 +19,55 @@ const pickNonEmptyString = (...values: unknown[]): string | null => {
 		}
 	}
 	return null;
+};
+
+const isSuccessfulPaymentStatus = (status: unknown): boolean => {
+	const normalizedStatus = String(status || "")
+		.trim()
+		.toLowerCase()
+		.replace(/[\s_-]+/g, "");
+	const isPaymentFailed = /(fail|error|cancel|declin|denied|reject|void|timeout|expire)/.test(
+		normalizedStatus
+	);
+	return !isPaymentFailed && /(success|successful|paid|captur|complete|succeed)/.test(normalizedStatus);
+};
+
+const removeEmptyFields = <T extends Record<string, unknown>>(value: T): Partial<T> =>
+	Object.fromEntries(
+		Object.entries(value).filter(([, fieldValue]) => fieldValue !== null && fieldValue !== undefined && fieldValue !== "")
+	) as Partial<T>;
+
+const formatPlanDetails = (details: ReturnType<typeof resolvePaymentPlanDetails>) => {
+	if (!details) return null;
+
+	return removeEmptyFields({
+		plan: details.plan,
+		category: details.category,
+		duration: details.duration,
+		requirement_view: details.requirementView,
+		requirement_pitch: details.requirementPitch,
+		price: details.price,
+	});
+};
+
+const formatPaymentSummary = (payment: any) => {
+	if (!payment) return null;
+
+	return removeEmptyFields({
+		id: payment.id,
+		user_id: payment.user_id,
+		order_id: payment.order_id,
+		amount: payment.amount,
+		currency: payment.currency,
+		payment_method: payment.payment_method,
+		payment_provider: payment.payment_provider,
+		transaction_id: payment.provider_transaction_id || payment.gateway_payment_id,
+		status: payment.status,
+		plan: payment.plan,
+		paid_at: payment.paid_at,
+		created_at: payment.created_at,
+		updated_at: payment.updated_at,
+	});
 };
 
 const resolveUserInvoiceData = async (candidateEmail: unknown, userId: number): Promise<UserInvoiceData> => {
@@ -172,16 +222,16 @@ export const createPayment = async (req: Request, res: Response) => {
 			payerDetails?.email,
 			req.body?.email
 		)?.toLowerCase() || null;
-		const resolvedPlan =
-			typeof plan === "string" && plan.trim()
-				? plan.trim()
-				: typeof callback_payload?.plan === "string" && callback_payload.plan.trim()
-					? callback_payload.plan.trim()
-					: typeof callback_payload?.selected_plan === "string" && callback_payload.selected_plan.trim()
-						? callback_payload.selected_plan.trim()
-						: typeof callback_payload?.service_for === "string" && callback_payload.service_for.trim()
-							? callback_payload.service_for.trim()
-					: null;
+		const planDetails = resolvePaymentPlanDetails({
+			amount,
+			plan,
+			selectedPlan: req.body?.selected_plan || req.body?.selectedPlan,
+			serviceFor: req.body?.service_for || req.body?.serviceFor,
+			role: req.body?.role,
+			notes: req.body?.notes,
+			callbackPayload: callback_payload || req.body,
+		});
+		const resolvedPlan = planDetails?.plan || null;
 		const paidAtValue = paid_at ? new Date(paid_at) : isPaymentSuccessful ? new Date() : null;
 
 		const existingPayment = await Payment.findOne({
@@ -262,6 +312,8 @@ export const createPayment = async (req: Request, res: Response) => {
 			return res.status(200).json({
 				success: true,
 				message: "Payment updated successfully",
+				plan: resolvedPlan,
+				plan_details: planDetails,
 				data: existingPayment.toJSON(),
 			});
 		}
@@ -341,6 +393,8 @@ export const createPayment = async (req: Request, res: Response) => {
 		return res.status(201).json({
 			success: true,
 			message: "Payment created successfully",
+			plan: resolvedPlan,
+			plan_details: planDetails,
 			data: payment.toJSON(),
 		});
 	} catch (err: any) {
@@ -357,8 +411,33 @@ export const getPaymentsByUser = async (req: Request, res: Response) => {
 	}
 	const userId = Number(userIdParam);
 	try {
-		const payments = await Payment.findAll({ where: { user_id: userId } });
-		return res.status(200).json({ success: true, data: payments });
+		const payments = await Payment.findAll({
+			where: { user_id: userId },
+			order: [["updated_at", "DESC"], ["created_at", "DESC"]],
+		});
+		const paymentRows = payments.map((payment) => payment.toJSON() as any);
+		const currentPayment = paymentRows.find((payment) => isSuccessfulPaymentStatus(payment?.status)) || null;
+		const callbackPayload = currentPayment?.callback_payload || {};
+		const currentPlanDetails = currentPayment
+			? resolvePaymentPlanDetails({
+				amount: currentPayment.amount,
+				plan: currentPayment.plan,
+				selectedPlan: callbackPayload?.selected_plan || callbackPayload?.selectedPlan,
+				serviceFor: callbackPayload?.service_for || callbackPayload?.serviceFor,
+				role: callbackPayload?.role,
+				notes: callbackPayload?.notes,
+				callbackPayload,
+			})
+			: null;
+		const currentPlan = currentPlanDetails?.plan || currentPayment?.plan || null;
+
+		return res.status(200).json({
+			success: true,
+			current_plan: currentPlan,
+			current_plan_details: formatPlanDetails(currentPlanDetails),
+			current_payment: formatPaymentSummary(currentPayment),
+			data: paymentRows.map(formatPaymentSummary),
+		});
 	} catch (err: any) {
 		console.error("Error fetching payments for user", userId, err.message || err);
 		return sendErrorResponse(res, 500, "Failed to retrieve payments", err);

@@ -38,7 +38,7 @@ ManpowerRequirement.init(
     status: {
       type: DataTypes.STRING(50),
       allowNull: false,
-      defaultValue: "open",
+      defaultValue: "submitted",
     },
     company_details: {
       type: DataTypes.JSONB,

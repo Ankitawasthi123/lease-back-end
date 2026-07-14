@@ -19,6 +19,8 @@ import {
   updateRetailStatus,
   updateRetailPitchStatus,
   updateBidStatus,
+  updateManpowerBidStatus,
+  updateManpowerRequirementStatus,
   updateUserStatus,
 } from "../controllers/admin/adminUpdateController";
 
@@ -82,6 +84,8 @@ router.put("/pitches/status", protect, updatePitchStatus);
 router.put("/retails/status", protect, updateRetailStatus);
 router.put("/retail-pitches/status", protect, updateRetailPitchStatus);
 router.put("/bids/status", protect, updateBidStatus);
+router.put("/manpower-requirements/status", protect, updateManpowerRequirementStatus);
+router.put("/manpower-bids/status", protect, updateManpowerBidStatus);
 router.put("/users/status", protect, updateUserStatus);
 router.post(
   "/notifications/broadcast",

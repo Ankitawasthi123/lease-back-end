@@ -17,6 +17,8 @@ import {
   getManpowerRequirements,
   getMyManpowerBid,
   updateManpowerBid,
+  updateManpowerBidStatus,
+  updateManpowerRequirementStatus,
 } from "../controllers/manpowerController";
 
 const manpowerUploadDir = path.join("uploads", "manpower");
@@ -86,6 +88,15 @@ const manpowerFiles = upload.fields([
   { name: "company_profile", maxCount: 1 },
   { name: "company_profile_pdf", maxCount: 1 },
   { name: "company_profile_pdf_path", maxCount: 1 },
+  { name: "client_list", maxCount: 1 },
+  { name: "client_list_file", maxCount: 1 },
+  { name: "client_list_path", maxCount: 1 },
+  { name: "safety_certificate", maxCount: 1 },
+  { name: "safety_certificate_file", maxCount: 1 },
+  { name: "safety_certificate_path", maxCount: 1 },
+  { name: "iso", maxCount: 1 },
+  { name: "iso_file", maxCount: 1 },
+  { name: "iso_path", maxCount: 1 },
   { name: "authorized_signatory", maxCount: 1 },
   { name: "authorized_signatory_path", maxCount: 1 },
   { name: "company_stamp", maxCount: 1 },
@@ -96,11 +107,13 @@ const router = Router();
 
 router.post("/requirements", protect, manpowerFiles, createManpowerRequirement);
 router.get("/requirements", protect, getManpowerRequirements);
+router.put("/requirements/status", protect, updateManpowerRequirementStatus);
 router.get("/requirements/:id", protect, getManpowerRequirementById);
 router.delete("/requirements/:id", protect, deleteManpowerRequirement);
 router.post("/requirements/:id/bids", protect, manpowerFiles, createManpowerBid);
 router.get("/requirements/:id/my-bid", protect, getMyManpowerBid);
 router.get("/bids", protect, getManpowerBids);
+router.put("/bids/status", protect, updateManpowerBidStatus);
 router.get("/bids/:bidId", protect, getManpowerBidById);
 router.patch("/bids/:bidId", protect, manpowerFiles, updateManpowerBid);
 router.delete("/bids/:bidId", protect, deleteManpowerBid);

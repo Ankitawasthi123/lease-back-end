@@ -6,6 +6,7 @@ import config from "../config/env";
 import { Payment, User } from "../models";
 import { sendPaymentInvoiceEmail } from "../utils/invoiceMailer";
 import { ensurePaymentMetadataColumns } from "../utils/paymentSchema";
+import { resolvePaymentPlanDetails } from "../utils/paymentPlans";
 
 const toBigintOrderId = (value: unknown): string => {
   const raw = String(value ?? "").trim();
@@ -68,6 +69,26 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
       notes = {};
     }
 
+    const planDetails = resolvePaymentPlanDetails({
+      amount,
+      plan: req.body?.plan,
+      selectedPlan: req.body?.selected_plan || req.body?.selectedPlan,
+      serviceFor: req.body?.service_for || req.body?.serviceFor,
+      role: req.body?.role,
+      notes,
+    });
+    if (planDetails) {
+      notes = {
+        ...(notes || {}),
+        plan: planDetails.plan,
+        plan_category: planDetails.category,
+        plan_duration: planDetails.duration,
+        requirement_view: planDetails.requirementView,
+        requirement_pitch: planDetails.requirementPitch,
+        plan_price: planDetails.price,
+      };
+    }
+
     const order = await razorpay.orders.create({
       amount: amountInSubunits,
       currency,
@@ -78,6 +99,8 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       order,
+      plan: planDetails?.plan || null,
+      plan_details: planDetails,
       key: (process.env.RAZORPAY_KEY_ID as string) || (config as any).RAZORPAY_KEY_ID,
     });
   } catch (err: any) {
@@ -152,17 +175,21 @@ export const verifyRazorpaySignature = async (req: Request, res: Response) => {
       const normalizedOrderId = toBigintOrderId(receiptOrOrderId);
 
       const notesUserId = Number(orderDetails?.notes?.user_id || orderDetails?.notes?.login_id || 0);
-      const resolvedPlan =
-        typeof plan === "string" && plan.trim()
-          ? plan.trim()
-          : typeof orderDetails?.notes?.plan === "string" && orderDetails.notes.plan.trim()
-            ? orderDetails.notes.plan.trim()
-            : null;
-      const finalUserId = resolvedUserId || notesUserId;
       const amountFromOrder =
         typeof orderDetails?.amount === "number" && !Number.isNaN(orderDetails.amount)
           ? Number(orderDetails.amount) / 100
           : undefined;
+      const planDetails = resolvePaymentPlanDetails({
+        amount: amount !== undefined && amount !== null ? amount : amountFromOrder,
+        plan,
+        selectedPlan: req.body?.selected_plan || req.body?.selectedPlan,
+        serviceFor: req.body?.service_for || req.body?.serviceFor,
+        role: req.body?.role,
+        notes: orderDetails?.notes,
+        callbackPayload: req.body,
+      });
+      const resolvedPlan = planDetails?.plan || null;
+      const finalUserId = resolvedUserId || notesUserId;
 
       const existing = await Payment.findOne({
         where: {
@@ -325,10 +352,12 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
       try {
         const normalizedOrderId = toBigintOrderId(orderId);
         const notesUserId = Number(entity?.notes?.user_id || entity?.notes?.login_id || 0);
-        const resolvedPlan =
-          typeof entity?.notes?.plan === "string" && entity.notes.plan.trim()
-            ? entity.notes.plan.trim()
-            : null;
+        const planDetails = resolvePaymentPlanDetails({
+          amount,
+          notes: entity?.notes,
+          callbackPayload: req.body,
+        });
+        const resolvedPlan = planDetails?.plan || null;
         const existing = await Payment.findOne({
           where: {
             [Op.or]: [{ order_id: normalizedOrderId }, { provider_transaction_id: String(paymentId || "") }],
@@ -401,7 +430,7 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
         }
 
         if (billingEmail) {
-          const webhookPlan = String(entity?.notes?.plan || (existing as any)?.get?.("plan") || "") || null;
+          const webhookPlan = resolvedPlan || String(entity?.notes?.plan || (existing as any)?.get?.("plan") || "") || null;
           const mailInfo = await sendPaymentInvoiceEmail({
             recipientEmail: billingEmail,
             recipientName: String(entity?.notes?.name || entity?.notes?.customer_name || "") || undefined,

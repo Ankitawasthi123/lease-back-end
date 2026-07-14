@@ -441,6 +441,110 @@ export const updateBidStatus = async (req: Request, res: Response) => {
   }
 };
 
+export const updateManpowerRequirementStatus = async (req: Request, res: Response) => {
+  try {
+    const { login_id, requirement_id, manpower_requirement_id, status } = req.body;
+    const targetRequirementId = requirement_id ?? manpower_requirement_id;
+
+    if (!login_id || !targetRequirementId || !status) {
+      return res.status(400).json({
+        error: "login_id, requirement_id/manpower_requirement_id, and status are required",
+      });
+    }
+
+    const userResult = await pool.query(
+      `SELECT id, role FROM users WHERE id = $1`,
+      [login_id],
+    );
+
+    if (userResult.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (userResult.rows[0].role !== "admin") {
+      return res.status(403).json({
+        error: "Only admin users can update manpower requirement status",
+      });
+    }
+
+    const normalizedStatus = String(status).trim().toLowerCase();
+    const updateResult = await pool.query(
+      `
+      UPDATE manpower_requirements
+      SET status = $1,
+          updated_at = NOW()
+      WHERE id::text = $2 OR requirement_id = $2
+      RETURNING *
+      `,
+      [normalizedStatus, String(targetRequirementId)],
+    );
+
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: "Manpower requirement not found" });
+    }
+
+    return res.status(200).json({
+      message: "Manpower requirement status updated successfully",
+      data: updateResult.rows[0],
+    });
+  } catch (error: any) {
+    console.error("UPDATE MANPOWER REQUIREMENT STATUS ERROR:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const updateManpowerBidStatus = async (req: Request, res: Response) => {
+  try {
+    const { login_id, bid_id, manpower_bid_id, status } = req.body;
+    const targetBidId = bid_id ?? manpower_bid_id;
+
+    if (!login_id || !targetBidId || !status) {
+      return res.status(400).json({
+        error: "login_id, bid_id/manpower_bid_id, and status are required",
+      });
+    }
+
+    const userResult = await pool.query(
+      `SELECT id, role FROM users WHERE id = $1`,
+      [login_id],
+    );
+
+    if (userResult.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (userResult.rows[0].role !== "admin") {
+      return res.status(403).json({
+        error: "Only admin users can update manpower bid status",
+      });
+    }
+
+    const normalizedStatus = String(status).trim().toLowerCase();
+    const updateResult = await pool.query(
+      `
+      UPDATE manpower_bids
+      SET status = $1,
+          updated_at = NOW()
+      WHERE bid_id::text = $2
+      RETURNING *
+      `,
+      [normalizedStatus, String(targetBidId)],
+    );
+
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: "Manpower bid not found" });
+    }
+
+    return res.status(200).json({
+      message: "Manpower bid status updated successfully",
+      data: updateResult.rows[0],
+    });
+  } catch (error: any) {
+    console.error("UPDATE MANPOWER BID STATUS ERROR:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const updateUserStatus = async (req: Request, res: Response) => {
   try {
     const { login_id, user_id: target_user_id, status } = req.body;

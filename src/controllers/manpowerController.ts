@@ -4,9 +4,11 @@ import sequelize from "../config/data-source";
 import ManpowerRequirement from "../models/ManpowerRequirement";
 import ManpowerBid from "../models/ManpowerBid";
 import ManpowerBidAward from "../models/ManpowerBidAward";
+import User from "../models/User";
 import { sendErrorResponse } from "../utils/errorResponse";
 
 let isManpowerSynced = false;
+let manpowerRequirementPkColumn: string | null = null;
 
 const ensureManpowerTables = async () => {
   if (!isManpowerSynced) {
@@ -31,6 +33,33 @@ const safeParseJson = <T = any>(value: any, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+const getManpowerRequirementPkColumn = async () => {
+  if (manpowerRequirementPkColumn) {
+    return manpowerRequirementPkColumn;
+  }
+
+  const columns = await sequelize.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'manpower_requirements'
+        AND column_name IN ('id', 'manpower_requirement_id')
+      ORDER BY CASE column_name WHEN 'id' THEN 1 ELSE 2 END
+    `,
+    { type: QueryTypes.SELECT },
+  );
+
+  const columnNames = (columns as any[]).map((column) => column.column_name);
+  manpowerRequirementPkColumn = columnNames.includes("id")
+    ? "id"
+    : columnNames.includes("manpower_requirement_id")
+      ? "manpower_requirement_id"
+      : "id";
+
+  return manpowerRequirementPkColumn;
 };
 
 const getParsedBody = (req: Request) => {
@@ -93,9 +122,33 @@ const validateUserReference = (res: Response, value: string, fieldName: string) 
 const getRole = (req: Request, body?: any) =>
   String(body?.role || req.user?.role || "").trim().toLowerCase();
 
+const resolveRequestRole = async (req: Request, body?: any) => {
+  const providedRole = getRole(req, body);
+  if (providedRole) {
+    return providedRole;
+  }
+
+  const rawUserId =
+    body?.login_id ??
+    body?.loginId ??
+    body?.user_id ??
+    body?.userId ??
+    req.user?.id ??
+    req.user?.userId ??
+    req.user?.login_id;
+  const userId = Number(rawUserId);
+  if (!Number.isFinite(userId)) {
+    return "";
+  }
+
+  const user = await User.findByPk(userId, { attributes: ["role"] });
+  return String(user?.role || "").trim().toLowerCase();
+};
+
 const isCompanyRole = (role: string) => role === "company";
+const isAdminRole = (role: string) => role === "admin";
 const isContractorRole = (role: string) =>
-  ["contractor", "threepl", "3pl", "three_pl"].includes(role);
+  ["contractor", "contractors", "contracter", "contractore", "threepl", "3pl", "three_pl"].includes(role);
 
 const uploadedFilePath = (req: Request, fieldNames: string[]) => {
   const files = req.files as Record<string, Express.Multer.File[]> | undefined;
@@ -106,6 +159,44 @@ const uploadedFilePath = (req: Request, fieldNames: string[]) => {
     }
   }
   return null;
+};
+
+const applyBidFileUploads = (req: Request, documents: any, declaration: any) => {
+  const documentUploadFields = [
+    {
+      key: "company_profile_pdf_path",
+      fields: ["company_profile", "company_profile_pdf", "company_profile_pdf_path"],
+    },
+    {
+      key: "client_list_path",
+      fields: ["client_list", "client_list_file", "client_list_path"],
+    },
+    {
+      key: "safety_certificate_path",
+      fields: ["safety_certificate", "safety_certificate_file", "safety_certificate_path"],
+    },
+    {
+      key: "iso_path",
+      fields: ["iso", "iso_file", "iso_path"],
+    },
+  ];
+
+  for (const uploadField of documentUploadFields) {
+    const filePath = uploadedFilePath(req, uploadField.fields);
+    if (filePath) {
+      documents[uploadField.key] = filePath;
+    }
+  }
+
+  const signatoryPath = uploadedFilePath(req, ["authorized_signatory", "authorized_signatory_path"]);
+  const stampPath = uploadedFilePath(req, ["company_stamp", "company_stamp_path"]);
+
+  if (signatoryPath) {
+    declaration.authorized_signatory_path = signatoryPath;
+  }
+  if (stampPath) {
+    declaration.company_stamp_path = stampPath;
+  }
 };
 
 const toNumber = (value: any) => {
@@ -191,14 +282,24 @@ const hasAwardForContractor = async (requirementId: string, contractorId: string
     return false;
   }
 
-  const award = await ManpowerBidAward.findOne({
-    where: {
-      manpower_requirement_id: requirementId,
-      contractor_id: contractorDbId,
-      status: "awarded",
+  const rows = await sequelize.query(
+    `
+      SELECT 1
+      FROM public.manpower_bid_awards
+      WHERE manpower_requirement_id = :requirementId
+        AND contractor_id = :contractorId
+        AND status = 'awarded'
+      LIMIT 1
+    `,
+    {
+      replacements: {
+        requirementId,
+        contractorId: contractorDbId,
+      },
+      type: QueryTypes.SELECT,
     },
-  });
-  return Boolean(award);
+  );
+  return rows.length > 0;
 };
 
 const findRequirementByIdentifier = async (identifier: string) => {
@@ -423,7 +524,7 @@ export const createManpowerRequirement = async (req: Request, res: Response) => 
     const requirement = await ManpowerRequirement.create({
       requirement_id: body.requirement_id || generateRequirementId(),
       company_id: companyDbId,
-      status: body.status || "open",
+      status: body.status || "submitted",
       company_details: safeParseJson(body.company_details ?? body.companyDetails, {}),
       requirement_details: safeParseJson(body.requirement_details ?? body.requirementDetails, {}),
       manpower_rows: safeParseJson(body.manpower_rows ?? body.manpowerRows, []),
@@ -456,9 +557,9 @@ export const createManpowerRequirement = async (req: Request, res: Response) => 
 
 export const getManpowerRequirements = async (req: Request, res: Response) => {
   try {
-    await ensureManpowerTables();
     const body = getParsedBody(req);
-    const role = getRole(req, { ...body, ...req.query });
+    const role = await resolveRequestRole(req, { ...body, ...req.query });
+    const pkColumn = await getManpowerRequirementPkColumn();
     const hasCompanyId =
       req.query.company_id !== undefined ||
       req.query.companyId !== undefined ||
@@ -469,8 +570,10 @@ export const getManpowerRequirements = async (req: Request, res: Response) => {
       req.query.contractorId !== undefined ||
       body.contractor_id !== undefined ||
       body.contractorId !== undefined;
+    const isAdminUser = isAdminRole(role);
     const isCompanyUser = isCompanyRole(role) || (!role && hasCompanyId && !hasContractorId);
-    const isContractorUser = isContractorRole(role) || (!role && hasContractorId);
+    const isContractorUser =
+      isContractorRole(role) || (!isAdminUser && !isCompanyUser && (hasContractorId || !hasCompanyId));
 
     const requesterId = isCompanyUser
       ? getUserId(req, { ...body, ...req.query }, [
@@ -495,64 +598,82 @@ export const getManpowerRequirements = async (req: Request, res: Response) => {
     const industry = String(req.query.industry || "").trim();
     const location = String(req.query.location || "").trim();
     const search = String(req.query.search || "").trim();
-    const where: any = {};
-    const andFilters: any[] = [];
+    const whereClauses: string[] = [];
+    const replacements: any = {};
 
     if (isCompanyUser) {
       if (!requesterDbId) {
         return sendErrorResponse(res, 400, "company_id must be provided for company users");
       }
-      where.company_id = requesterDbId;
+      whereClauses.push("company_id = :companyId");
+      replacements.companyId = requesterDbId;
       if (status) {
-        where.status = { [Op.iLike]: status };
+        whereClauses.push("status ILIKE :status");
+        replacements.status = status;
       }
+    } else if (isAdminUser) {
+      // Admin users can view all manpower requirements without a status barrier.
     } else if (isContractorUser) {
-      where.status = { [Op.iLike]: "approved" };
+      whereClauses.push("status ILIKE 'approved'");
     } else {
-      where.status = { [Op.iLike]: "approved" };
+      whereClauses.push("status ILIKE 'approved'");
     }
     if (industry) {
-      andFilters.push(
-        Sequelize.where(Sequelize.cast(Sequelize.col("industry_categories"), "text"), {
-          [Op.iLike]: `%${industry}%`,
-        }),
-      );
+      whereClauses.push("industry_categories::text ILIKE :industry");
+      replacements.industry = `%${industry}%`;
     }
     if (location) {
-      andFilters.push(
-        Sequelize.where(Sequelize.cast(Sequelize.col("requirement_details"), "text"), {
-          [Op.iLike]: `%${location}%`,
-        }),
-      );
+      whereClauses.push("requirement_details::text ILIKE :location");
+      replacements.location = `%${location}%`;
     }
     if (search) {
-      andFilters.push({
-        [Op.or]: [
-          { requirement_id: { [Op.iLike]: `%${search}%` } },
-          Sequelize.where(Sequelize.cast(Sequelize.col("company_details"), "text"), {
-            [Op.iLike]: `%${search}%`,
-          }),
-          Sequelize.where(Sequelize.cast(Sequelize.col("requirement_details"), "text"), {
-            [Op.iLike]: `%${search}%`,
-          }),
-        ],
-      });
-    }
-    if (andFilters.length) {
-      where[Op.and] = andFilters;
+      whereClauses.push(`(
+        requirement_id ILIKE :search
+        OR company_details::text ILIKE :search
+        OR requirement_details::text ILIKE :search
+      )`);
+      replacements.search = `%${search}%`;
     }
 
-    const requirements = await ManpowerRequirement.findAll({
-      where,
-      order: [["created_at", "DESC"]],
-    });
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    const requirements = await sequelize.query(
+      `
+        SELECT
+          ${pkColumn} AS id,
+          requirement_id,
+          company_id,
+          status,
+          company_details,
+          requirement_details,
+          manpower_rows,
+          industry_categories,
+          preferred_industry_experience,
+          contractor_scope,
+          commercial_terms,
+          supporting_pdf_path,
+          additional_notes,
+          created_at,
+          updated_at
+        FROM public.manpower_requirements
+        ${whereSql}
+        ORDER BY created_at DESC
+      `,
+      {
+        replacements,
+        type: QueryTypes.SELECT,
+      },
+    );
     const bidCounts = await getManpowerBidCounts(
       requirements.map((requirement: any) => requirement.id),
     );
 
     const data = await Promise.all(
       requirements.map(async (requirement: any) => {
-        const serialized = await serializeRequirementForUser(requirement, role, requesterId);
+        const serialized = await serializeRequirementForUser(
+          { toJSON: () => requirement },
+          role,
+          requesterId,
+        );
         return {
           ...serialized,
           bid_count: bidCounts.get(String(requirement.id)) || 0,
@@ -676,19 +797,7 @@ export const createManpowerBid = async (req: Request, res: Response) => {
     const documents: any = safeParseJson(body.documents, {});
     const declaration: any = safeParseJson(body.declaration, {});
 
-    const companyProfilePath = uploadedFilePath(req, ["company_profile", "company_profile_pdf", "company_profile_pdf_path"]);
-    const signatoryPath = uploadedFilePath(req, ["authorized_signatory", "authorized_signatory_path"]);
-    const stampPath = uploadedFilePath(req, ["company_stamp", "company_stamp_path"]);
-
-    if (companyProfilePath) {
-      documents.company_profile_pdf_path = companyProfilePath;
-    }
-    if (signatoryPath) {
-      declaration.authorized_signatory_path = signatoryPath;
-    }
-    if (stampPath) {
-      declaration.company_stamp_path = stampPath;
-    }
+    applyBidFileUploads(req, documents, declaration);
 
     const bid = await insertManpowerBidRow({
       manpowerRequirementId: requirement.id,
@@ -739,16 +848,22 @@ export const getManpowerBids = async (req: Request, res: Response) => {
   try {
     await ensureManpowerTables();
     const body = getParsedBody(req);
-    const rawContractorId = getUserId(
-      req,
-      { ...body, ...req.query },
-      ["contractor_id", "contractorId", "login_id", "loginId"],
-    );
-    const contractorDbId = rawContractorId
+    const role = await resolveRequestRole(req, { ...body, ...req.query });
+    const isAdminUser = isAdminRole(role);
+    const isCompanyUser = isCompanyRole(role);
+    const isContractorUser = isContractorRole(role);
+    const requestBody = { ...body, ...req.query };
+    const rawContractorId = getUserId(req, requestBody, ["contractor_id", "contractorId", "login_id", "loginId"]);
+    const rawCompanyId = getUserId(req, requestBody, ["company_id", "companyId", "login_id", "loginId"]);
+    const contractorDbId = rawContractorId && isContractorUser
       ? validateUserReference(res, rawContractorId, "contractor_id")
       : null;
+    const companyDbId = rawCompanyId && isCompanyUser
+      ? validateUserReference(res, rawCompanyId, "company_id")
+      : null;
 
-    if (rawContractorId && !contractorDbId) return;
+    if (rawContractorId && isContractorUser && !contractorDbId) return;
+    if (rawCompanyId && isCompanyUser && !companyDbId) return;
 
     const rows = await sequelize.query(
       `
@@ -766,12 +881,20 @@ export const getManpowerBids = async (req: Request, res: Response) => {
         FROM public.manpower_bids mb
         JOIN public.manpower_requirements mr
           ON mr.id = mb.manpower_requirement_id
-        WHERE (:contractorId::uuid IS NULL OR mb.contractor_id = :contractorId::uuid)
+        WHERE (
+          :isAdmin = TRUE
+          OR (:isCompany = TRUE AND mr.company_id = :companyId::uuid)
+          OR (:isContractor = TRUE AND mb.contractor_id = :contractorId::uuid)
+        )
         ORDER BY mb.created_at DESC
       `,
       {
         replacements: {
           contractorId: contractorDbId,
+          companyId: companyDbId,
+          isAdmin: isAdminUser,
+          isCompany: isCompanyUser,
+          isContractor: isContractorUser,
         },
         type: QueryTypes.SELECT,
       },
@@ -792,16 +915,22 @@ export const getManpowerBidById = async (req: Request, res: Response) => {
   try {
     await ensureManpowerTables();
     const body = getParsedBody(req);
-    const rawContractorId = getUserId(
-      req,
-      { ...body, ...req.query },
-      ["contractor_id", "contractorId", "login_id", "loginId"],
-    );
-    const contractorDbId = rawContractorId
+    const role = await resolveRequestRole(req, { ...body, ...req.query });
+    const isAdminUser = isAdminRole(role);
+    const isCompanyUser = isCompanyRole(role);
+    const isContractorUser = isContractorRole(role);
+    const requestBody = { ...body, ...req.query };
+    const rawContractorId = getUserId(req, requestBody, ["contractor_id", "contractorId", "login_id", "loginId"]);
+    const rawCompanyId = getUserId(req, requestBody, ["company_id", "companyId", "login_id", "loginId"]);
+    const contractorDbId = rawContractorId && isContractorUser
       ? validateUserReference(res, rawContractorId, "contractor_id")
       : null;
+    const companyDbId = rawCompanyId && isCompanyUser
+      ? validateUserReference(res, rawCompanyId, "company_id")
+      : null;
 
-    if (rawContractorId && !contractorDbId) return;
+    if (rawContractorId && isContractorUser && !contractorDbId) return;
+    if (rawCompanyId && isCompanyUser && !companyDbId) return;
 
     const rows = await sequelize.query(
       `
@@ -825,13 +954,21 @@ export const getManpowerBidById = async (req: Request, res: Response) => {
         JOIN public.manpower_requirements mr
           ON mr.id = mb.manpower_requirement_id
         WHERE mb.bid_id = :bidId::uuid
-          AND (:contractorId::uuid IS NULL OR mb.contractor_id = :contractorId::uuid)
+          AND (
+            :isAdmin = TRUE
+            OR (:isCompany = TRUE AND mr.company_id = :companyId::uuid)
+            OR (:isContractor = TRUE AND mb.contractor_id = :contractorId::uuid)
+          )
         LIMIT 1
       `,
       {
         replacements: {
           bidId: req.params.bidId,
           contractorId: contractorDbId,
+          companyId: companyDbId,
+          isAdmin: isAdminUser,
+          isCompany: isCompanyUser,
+          isContractor: isContractorUser,
         },
         type: QueryTypes.SELECT,
       },
@@ -936,13 +1073,7 @@ export const updateManpowerBid = async (req: Request, res: Response) => {
     const documents: any = safeParseJson(body.documents, bid.documents || {});
     const declaration: any = safeParseJson(body.declaration, bid.declaration || {});
 
-    const companyProfilePath = uploadedFilePath(req, ["company_profile", "company_profile_pdf", "company_profile_pdf_path"]);
-    const signatoryPath = uploadedFilePath(req, ["authorized_signatory", "authorized_signatory_path"]);
-    const stampPath = uploadedFilePath(req, ["company_stamp", "company_stamp_path"]);
-
-    if (companyProfilePath) documents.company_profile_pdf_path = companyProfilePath;
-    if (signatoryPath) declaration.authorized_signatory_path = signatoryPath;
-    if (stampPath) declaration.company_stamp_path = stampPath;
+    applyBidFileUploads(req, documents, declaration);
 
     await bid.update({
       status: body.status || bid.status,
@@ -972,7 +1103,6 @@ export const getManpowerLiveBids = async (req: Request, res: Response) => {
   try {
     await ensureManpowerTables();
     const requirements = await ManpowerRequirement.findAll({
-      where: { status: { [Op.iLike]: "open" } },
       order: [["created_at", "DESC"]],
     });
 
@@ -1008,10 +1138,10 @@ export const getManpowerLiveBidByRequirement = async (req: Request, res: Respons
       return sendErrorResponse(res, 404, "Manpower requirement not found");
     }
 
-    const body = getParsedBody(req);
+    const body = { ...getParsedBody(req), ...req.query };
     const userId = getUserId(req, body, ["contractor_id", "contractorId", "company_id", "companyId", "login_id", "loginId"]);
     const userDbId = normalizeUserReference(userId);
-    const role = getRole(req, body);
+    const role = await resolveRequestRole(req, body);
     const bids = await sequelize.query(
       `
         SELECT *
@@ -1026,6 +1156,7 @@ export const getManpowerLiveBidByRequirement = async (req: Request, res: Respons
         type: QueryTypes.SELECT,
       },
     );
+    const canViewAllBids = isAdminRole(role) || isCompanyRole(role);
 
     const rankedBids = bids
       .map((bid: any) => ({
@@ -1035,7 +1166,8 @@ export const getManpowerLiveBidByRequirement = async (req: Request, res: Respons
       .sort((a, b) => a.final_monthly_quotation - b.final_monthly_quotation)
       .map((bid, index) => {
         const isOwnBid = Boolean(userDbId) && String(bid.contractor_id) === userDbId;
-        if (isCompanyRole(role) || isOwnBid) {
+        const isApprovedBid = String(bid.status || "").trim().toLowerCase() === "approved";
+        if (canViewAllBids || isOwnBid || isApprovedBid) {
           return {
             ...bid,
             live_bid_rank: index + 1,
@@ -1066,17 +1198,91 @@ export const getManpowerLiveBidByRequirement = async (req: Request, res: Respons
           })),
         };
       });
+    const visibleRankedBids =
+      isContractorRole(role)
+        ? rankedBids.filter((bid: any) => {
+            const isOwnBid = Boolean(userDbId) && String(bid.contractor_id) === userDbId;
+            const isApprovedBid = String(bid.status || "").trim().toLowerCase() === "approved";
+            return isOwnBid || isApprovedBid;
+          })
+        : rankedBids;
 
     return res.status(200).json({
       success: true,
       data: {
         requirement: await serializeRequirementForUser(requirement, role, userId),
-        bid_ladder: rankedBids,
+        bid_ladder: visibleRankedBids,
       },
     });
   } catch (err: any) {
     console.error("Get manpower live bid detail error:", err.message);
     return sendErrorResponse(res, 500, "Failed to fetch manpower live bid detail", err);
+  }
+};
+
+export const updateManpowerRequirementStatus = async (req: Request, res: Response) => {
+  try {
+    await ensureManpowerTables();
+    const body = getParsedBody(req);
+    const role = await resolveRequestRole(req, body);
+    if (!isAdminRole(role)) {
+      return sendErrorResponse(res, 403, "Only admin users can update manpower requirement status");
+    }
+
+    const requirementId = body.requirement_id ?? body.requirementId ?? body.id;
+    const status = String(body.status || "").trim().toLowerCase();
+    if (!requirementId || !status) {
+      return sendErrorResponse(res, 400, "requirement_id and status are required");
+    }
+
+    const requirement = await findRequirementByIdentifier(String(requirementId));
+    if (!requirement) {
+      return sendErrorResponse(res, 404, "Manpower requirement not found");
+    }
+
+    await requirement.update({ status });
+
+    return res.status(200).json({
+      success: true,
+      message: "Manpower requirement status updated successfully",
+      data: requirement.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Update manpower requirement status error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to update manpower requirement status", err);
+  }
+};
+
+export const updateManpowerBidStatus = async (req: Request, res: Response) => {
+  try {
+    await ensureManpowerTables();
+    const body = getParsedBody(req);
+    const role = await resolveRequestRole(req, body);
+    if (!isAdminRole(role)) {
+      return sendErrorResponse(res, 403, "Only admin users can update manpower bid status");
+    }
+
+    const bidId = body.bid_id ?? body.bidId ?? body.id;
+    const status = String(body.status || "").trim().toLowerCase();
+    if (!bidId || !status) {
+      return sendErrorResponse(res, 400, "bid_id and status are required");
+    }
+
+    const bid = await ManpowerBid.findByPk(String(bidId));
+    if (!bid) {
+      return sendErrorResponse(res, 404, "Manpower bid not found");
+    }
+
+    await bid.update({ status });
+
+    return res.status(200).json({
+      success: true,
+      message: "Manpower bid status updated successfully",
+      data: bid.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Update manpower bid status error:", err.message);
+    return sendErrorResponse(res, 500, "Failed to update manpower bid status", err);
   }
 };
 
